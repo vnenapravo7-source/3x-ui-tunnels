@@ -351,6 +351,11 @@ export const EXAMPLES: Record<string, unknown> = {
     ],
     "allowedIPsByInbound": {},
     "auth": "",
+    "clientHostRuleId": 1,
+    "clientHostRuleIds": [
+      1,
+      2
+    ],
     "comment": "",
     "created_at": 0,
     "email": "",
@@ -438,6 +443,11 @@ export const EXAMPLES: Record<string, unknown> = {
     "adTag": "",
     "allowedIPs": "",
     "auth": "",
+    "clientHostRuleId": 1,
+    "clientHostRuleIds": [
+      1,
+      2
+    ],
     "comment": "",
     "createdAt": 0,
     "email": "",

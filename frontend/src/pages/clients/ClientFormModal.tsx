@@ -37,6 +37,7 @@ import { normalizeClientIps, type ClientIpInfo } from '@/lib/clients/ip-log';
 import { resolveExternalLinkExpiry } from '@/lib/clients/external-link';
 import { useDatepicker } from '@/hooks/useDatepicker';
 import { useClientHwids } from '@/hooks/useClientHwids';
+import { useRawHostsQuery } from '@/api/queries/useRawHostsQuery';
 import { DateTimePicker, SelectAllClearButtons } from '@/components/form';
 import { FormField } from '@/components/form/rhf';
 import ClientHwidListModal from '@/components/clients/ClientHwidList';
@@ -129,6 +130,8 @@ type Values = ClientFormValues & {
   expiryDate: number;
   limitHwid: number;
   externalLinks: ExternalLinkRow[];
+  clientHostRuleId: number | null;
+  clientHostRuleIds: number[];
   wgPrivateKey: string;
   wgPublicKey: string;
   wgPreSharedKey: string;
@@ -148,6 +151,8 @@ const EMPTY: Values = {
   auth: '',
   flow: '',
   security: 'auto',
+  clientHostRuleId: null,
+  clientHostRuleIds: [],
   reverseTag: '',
   totalGB: 0,
   expiryDate: 0,
@@ -363,6 +368,20 @@ export default function ClientFormModal({
             ? 'auto'
             : client.security,
         reverseTag: client.reverse?.tag || '',
+        clientHostRuleId:
+          typeof client.clientHostRuleId === 'number' && client.clientHostRuleId > 0
+            ? client.clientHostRuleId
+            : null,
+        clientHostRuleIds: (() => {
+          const ids = new Set<number>();
+          for (const id of client.clientHostRuleIds || []) {
+            if (typeof id === 'number' && id > 0) ids.add(id);
+          }
+          if (typeof client.clientHostRuleId === 'number' && client.clientHostRuleId > 0) {
+            ids.add(client.clientHostRuleId);
+          }
+          return [...ids];
+        })(),
         totalGB: bytesToGB(client.totalGB || 0),
         reset: Number(client.reset) || 0,
         resetDay: Number(client.resetDay) || 0,
@@ -575,6 +594,24 @@ export default function ClientFormModal({
     [inbounds, inboundIds],
   );
 
+  // Host rule override options from the raw hosts list, which carries the
+  // numeric ids the binding references. Empty means the inbound rule applies.
+  const { hosts: rawHostRules } = useRawHostsQuery();
+  const hostRuleOptions = useMemo(
+    () =>
+      (rawHostRules || [])
+        .filter((h) => !h.isDisabled)
+        .map((h) => ({
+          value: h.id as number,
+          label:
+            h.remark || h.address
+              ? `${h.remark || h.address}${h.address && h.remark ? ` (${h.address})` : ''} (#${h.id})`
+              : `Host #${h.id}`,
+        })),
+    [rawHostRules],
+  );
+  const clientHostRuleIds = useWatch({ control: methods.control, name: 'clientHostRuleIds' });
+
   const expiryDayjs = useMemo<Dayjs | null>(
     () => (expiryDate > 0 ? dayjs(expiryDate) : null),
     [expiryDate],
@@ -657,6 +694,8 @@ export default function ClientFormModal({
       auth: values.auth,
       flow: values.flow,
       security: values.security,
+      clientHostRuleId: values.clientHostRuleId,
+      clientHostRuleIds: values.clientHostRuleIds,
       reverseTag: values.reverseTag,
       totalGB: values.totalGB,
       delayedStart: values.delayedStart,
@@ -692,6 +731,16 @@ export default function ClientFormModal({
       auth: values.auth,
       flow: showFlow ? values.flow || '' : '',
       security: showSecurity ? values.security || 'auto' : 'auto',
+      // The list is the source of truth; the legacy single id mirrors its
+      // first entry. An empty list clears the override.
+      clientHostRuleIds: Array.isArray(values.clientHostRuleIds)
+        ? values.clientHostRuleIds.filter((id) => typeof id === 'number' && id > 0)
+        : [],
+      clientHostRuleId:
+        Array.isArray(values.clientHostRuleIds) &&
+        values.clientHostRuleIds.some((id) => typeof id === 'number' && id > 0)
+          ? values.clientHostRuleIds.find((id) => typeof id === 'number' && id > 0)
+          : null,
       totalGB: totalBytes,
       expiryTime,
       reset: Number(values.reset) || 0,
@@ -1063,31 +1112,53 @@ export default function ClientFormModal({
                         </Col>
                       </Row>
 
-                      {(tgBotEnable || showReverseTag) && (
+                      <Row gutter={16}>
+                        <Col xs={24} md={12}>
+                          <Form.Item label="Host Rule Override">
+                            <Select
+                              mode="multiple"
+                              value={clientHostRuleIds || []}
+                              onChange={(v) => methods.setValue('clientHostRuleIds', v)}
+                              options={hostRuleOptions}
+                              placeholder="Default (inbound rule)"
+                              maxTagCount="responsive"
+                              placement="topLeft"
+                              listHeight={220}
+                              allowClear
+                              showSearch={{
+                                filterOption: (input, option) =>
+                                  ((option?.label as string) || '')
+                                    .toLowerCase()
+                                    .includes(input.toLowerCase()),
+                              }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        {showReverseTag && (
+                          <Col xs={24} md={12}>
+                            <FormField name="reverseTag" label={t('pages.clients.reverseTag')}>
+                              <Input placeholder={t('pages.clients.reverseTagPlaceholder')} />
+                            </FormField>
+                          </Col>
+                        )}
+                      </Row>
+
+                      {tgBotEnable && (
                         <Row gutter={16}>
-                          {tgBotEnable && (
-                            <Col xs={24} md={12}>
-                              <FormField
-                                name="tgId"
-                                label={t('pages.clients.telegramId')}
-                                transform={{ output: (v) => Number(v) || 0 }}
-                              >
-                                <InputNumber
-                                  min={0}
-                                  controls={false}
-                                  placeholder={t('pages.clients.telegramIdPlaceholder')}
-                                  style={{ width: '100%' }}
-                                />
-                              </FormField>
-                            </Col>
-                          )}
-                          {showReverseTag && (
-                            <Col xs={24} md={12}>
-                              <FormField name="reverseTag" label={t('pages.clients.reverseTag')}>
-                                <Input placeholder={t('pages.clients.reverseTagPlaceholder')} />
-                              </FormField>
-                            </Col>
-                          )}
+                          <Col xs={24} md={12}>
+                            <FormField
+                              name="tgId"
+                              label={t('pages.clients.telegramId')}
+                              transform={{ output: (v) => Number(v) || 0 }}
+                            >
+                              <InputNumber
+                                min={0}
+                                controls={false}
+                                placeholder={t('pages.clients.telegramIdPlaceholder')}
+                                style={{ width: '100%' }}
+                              />
+                            </FormField>
+                          </Col>
                         </Row>
                       )}
 
