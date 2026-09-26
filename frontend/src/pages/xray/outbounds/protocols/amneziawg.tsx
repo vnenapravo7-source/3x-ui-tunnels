@@ -79,6 +79,10 @@ export default function AmneziawgFields() {
       <ObfText name="h3" label={t('pages.xray.amneziawg.h3')} placeholder="1700-2400" />
       <ObfText name="h4" label={t('pages.xray.amneziawg.h4')} placeholder="2500-3200" />
       <ObfText name="i1" label={t('pages.xray.amneziawg.i1')} placeholder="<r 64>" />
+      <ObfText name="i2" label={t('pages.xray.amneziawg.i2')} placeholder="<r 64>" />
+      <ObfText name="i3" label={t('pages.xray.amneziawg.i3')} placeholder="<r 64>" />
+      <ObfText name="i4" label={t('pages.xray.amneziawg.i4')} placeholder="<r 64>" />
+      <ObfText name="i5" label={t('pages.xray.amneziawg.i5')} placeholder="<r 64>" />
       <ObfText
         name="contentPaddingAddition"
         label={t('pages.xray.amneziawg.contentPaddingAddition')}
