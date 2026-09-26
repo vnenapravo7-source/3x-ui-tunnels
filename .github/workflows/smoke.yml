@@ -30,13 +30,19 @@ on:
   workflow_run:
     workflows: ["Release 3X-UI"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag to verify (for example fork-v3.8.5-3)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   noninteractive-install:
-    if: github.event_name != 'workflow_run'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -50,11 +56,11 @@ jobs:
 
   release-tag-install:
     if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      startsWith(github.event.workflow_run.head_branch, 'v') &&
-      contains(github.event.workflow_run.head_branch, '.')
+      (github.event_name == 'workflow_dispatch' && startsWith(inputs.release_tag, 'fork-v')) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'fork-v'))
     strategy:
       fail-fast: false
       matrix:
@@ -65,5 +71,5 @@ jobs:
       - uses: actions/checkout@v7
       - name: Pinned release install smoke test
         env:
-          XUI_SMOKE_VERSION: ${{ github.event.workflow_run.head_branch }}
+          XUI_SMOKE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.workflow_run.head_branch }}
         run: bash deploy/test/smoke-noninteractive.sh "$XUI_SMOKE_VERSION"
