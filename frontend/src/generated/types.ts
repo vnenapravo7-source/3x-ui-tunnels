@@ -20,6 +20,7 @@ export interface AllSetting {
   discordMemory: number;
   discordRunTime: string;
   expireDiff: number;
+  externalSubUserAgent: string;
   externalTrafficInformEnable: boolean;
   externalTrafficInformURI: string;
   happLinkEnable: boolean;
@@ -170,6 +171,7 @@ export interface AllSettingView {
   discordMemory: number;
   discordRunTime: string;
   expireDiff: number;
+  externalSubUserAgent: string;
   externalTrafficInformEnable: boolean;
   externalTrafficInformURI: string;
   happLinkEnable: boolean;

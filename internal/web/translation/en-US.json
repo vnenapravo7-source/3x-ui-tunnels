@@ -1378,6 +1378,8 @@
       "subDomainDesc": "The domain name for the subscription service. (leave blank to listen on all domains and IPs). Also used as the fallback domain for the displayed subscription link when \"Reverse Proxy URI\" is empty — set \"Reverse Proxy URI\" if the panel and the subscription are reached through different domains (e.g. behind a reverse proxy).",
       "subUpdates": "Update Intervals",
       "subUpdatesDesc": "The update intervals of the subscription URL in the client apps. (unit: hour)",
+      "externalSubUserAgent": "External subscription User-Agent",
+      "externalSubUserAgentDesc": "User-Agent header sent when the panel fetches a client external subscription URL. Leave blank to use the default (v2rayNG/1.8.5). Some providers reject unknown clients.",
       "subEncrypt": "Encode",
       "subEncryptDesc": "The returned content of subscription service will be Base64 encoded.",
       "subURI": "Reverse Proxy URI",

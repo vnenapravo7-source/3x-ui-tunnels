@@ -14,6 +14,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 )
 
 // External subscription fetching: a remote URL whose body is a share-link
@@ -149,7 +150,7 @@ func doFetchSubscriptionLinks(rawURL string) ([]string, error) {
 		return nil, err
 	}
 	// Some providers gate the link body on a known client User-Agent.
-	req.Header.Set("User-Agent", "v2rayNG/1.8.5")
+	req.Header.Set("User-Agent", externalSubUserAgent())
 	// A 3x-ui donor with an HWID limit answers 404 when the header is empty (#6559).
 	if hwid := serverHwid(); hwid != "" {
 		req.Header.Set("X-HWID", hwid)
@@ -176,6 +177,16 @@ var (
 	errBadStatus                = &subError{"non-2xx subscription response"}
 	errSubscriptionBodyTooLarge = &subError{"subscription response body exceeds size limit"}
 )
+
+// externalSubUserAgent returns the panel setting for external subscription
+// fetches, falling back to the historical hardcoded client UA.
+func externalSubUserAgent() string {
+	ua, err := (&service.SettingService{}).GetExternalSubUserAgent()
+	if err != nil {
+		return service.DefaultExternalSubUserAgent
+	}
+	return ua
+}
 
 // serverHwidKey is the settings row holding this panel's stable identity
 // for outbound external-subscription fetches.

@@ -72,6 +72,7 @@ export const AllSettingSchema = z
     restartXrayOnClientDisable: z.boolean().optional(),
     subCertFile: z.string().optional(),
     subKeyFile: z.string().optional(),
+    externalSubUserAgent: z.string().max(512).optional(),
     subUpdates: z.number().int().min(0).max(525600).optional(),
     subEncrypt: z.boolean().optional(),
     subURI: z.string().optional(),

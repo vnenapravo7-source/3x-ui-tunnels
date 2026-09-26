@@ -43,6 +43,9 @@ export const SCHEMAS: Record<string, unknown> = {
         "minimum": 0,
         "type": "integer"
       },
+      "externalSubUserAgent": {
+        "type": "string"
+      },
       "externalTrafficInformEnable": {
         "type": "boolean"
       },
@@ -493,6 +496,7 @@ export const SCHEMAS: Record<string, unknown> = {
       "discordMemory",
       "discordRunTime",
       "expireDiff",
+      "externalSubUserAgent",
       "externalTrafficInformEnable",
       "externalTrafficInformURI",
       "happLinkEnable",
@@ -673,6 +677,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "expireDiff": {
         "minimum": 0,
         "type": "integer"
+      },
+      "externalSubUserAgent": {
+        "type": "string"
       },
       "externalTrafficInformEnable": {
         "type": "boolean"
@@ -1148,6 +1155,7 @@ export const SCHEMAS: Record<string, unknown> = {
       "discordMemory",
       "discordRunTime",
       "expireDiff",
+      "externalSubUserAgent",
       "externalTrafficInformEnable",
       "externalTrafficInformURI",
       "happLinkEnable",

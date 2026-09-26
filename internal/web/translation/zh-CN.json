@@ -1256,6 +1256,8 @@
       "subDomainDesc": "订阅服务监听的域名（留空表示监听所有域名和 IP）。当「反向代理 URI」为空时，也会作为显示的订阅链接的回退域名——如果面板和订阅通过不同的域名访问(例如位于反向代理之后)，请设置「反向代理 URI」。",
       "subUpdates": "更新间隔",
       "subUpdatesDesc": "客户端应用中订阅 URL 的更新间隔（单位：小时）",
+      "externalSubUserAgent": "外部订阅 User-Agent",
+      "externalSubUserAgentDesc": "面板拉取客户端外部订阅 URL 时发送的 User-Agent。留空则使用默认值（v2rayNG/1.8.5）。部分服务商会拒绝未知客户端。",
       "subEncrypt": "编码",
       "subEncryptDesc": "订阅服务返回的内容将采用 Base64 编码",
       "subURI": "反向代理 URI",

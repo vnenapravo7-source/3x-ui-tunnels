@@ -1256,6 +1256,8 @@
       "subDomainDesc": "O nome de domínio para o serviço de assinatura. (deixe em branco para escutar em todos os domínios e IPs). Também é usado como domínio de fallback para o link de assinatura exibido quando \"URI de Proxy Reverso\" estiver vazio — configure \"URI de Proxy Reverso\" se o painel e a assinatura forem acessados por domínios diferentes (por exemplo, atrás de um proxy reverso).",
       "subUpdates": "Intervalos de Atualização",
       "subUpdatesDesc": "Os intervalos de atualização da URL de assinatura nos aplicativos de cliente. (unidade: hora)",
+      "externalSubUserAgent": "User-Agent de assinatura externa",
+      "externalSubUserAgentDesc": "Cabeçalho User-Agent ao buscar a URL de assinatura externa do cliente. Deixe em branco para usar o padrão (v2rayNG/1.8.5). Alguns provedores rejeitam clientes desconhecidos.",
       "subEncrypt": "Codificar",
       "subEncryptDesc": "O conteúdo retornado pelo serviço de assinatura será codificado em Base64.",
       "subURI": "URI de Proxy Reverso",
