@@ -210,7 +210,7 @@ rollback_release() {
 
 tunnel_asset_url() {
     local repo="$1" pattern="$2"
-    curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: 3x-ui-tunnels' \
+    curl -fsSL --retry 3 --retry-delay 1 --retry-all-errors -H 'Accept: application/vnd.github+json' -H 'User-Agent: 3x-ui-tunnels' \
         "https://api.github.com/repos/${repo}/releases/latest" \
         | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
         | cut -d '"' -f 4 \
@@ -218,8 +218,41 @@ tunnel_asset_url() {
         | head -n 1
 }
 
+ensure_tunnel_host_tools() {
+    local missing=0
+    command -v ip >/dev/null 2>&1 || missing=1
+    command -v iptables >/dev/null 2>&1 || missing=1
+    command -v sysctl >/dev/null 2>&1 || missing=1
+    if [[ "$missing" -eq 1 ]]; then
+        LOGI 'Installing required IP routing, firewall and sysctl tools for tunnel servers.'
+        case "$release" in
+            ubuntu | debian | armbian)
+                apt-get update && apt-get install -y iproute2 iptables procps kmod || return 1 ;;
+            centos | rhel | almalinux | rocky | ol | fedora)
+                if command -v dnf >/dev/null 2>&1; then
+                    dnf install -y iproute iptables procps-ng kmod || return 1
+                else
+                    yum install -y iproute iptables procps-ng kmod || return 1
+                fi ;;
+            alpine)
+                apk add --no-cache iproute2 iptables procps kmod || return 1 ;;
+            *) LOGE 'Install iproute2, iptables and procps for WDTT/CSQTT on this OS.'; return 1 ;;
+        esac
+    fi
+    for tool in ip iptables sysctl; do
+        command -v "$tool" >/dev/null 2>&1 || { LOGE "Missing required command: $tool"; return 1; }
+    done
+    if [[ ! -c /dev/net/tun ]]; then
+        command -v modprobe >/dev/null 2>&1 && modprobe tun >/dev/null 2>&1 || true
+    fi
+    [[ -c /dev/net/tun ]] || { LOGE 'TUN is unavailable: /dev/net/tun is missing. Enable TUN on the VPS/container host.'; return 1; }
+}
+
 install_tunnel_binary() {
     local kind="$1" machine arch openflux_arch url tmpdir asset
+    if [[ "$kind" == "wdtt" || "$kind" == "csqtt" ]]; then
+        ensure_tunnel_host_tools || return 1
+    fi
     machine="$(uname -m)"
     case "$machine" in
         x86_64 | amd64) arch="amd64" ;;
@@ -230,41 +263,42 @@ install_tunnel_binary() {
     openflux_arch="$arch"
     [[ "$arch" == "armv7" ]] && openflux_arch="arm"
     tmpdir="$(mktemp -d)" || return 1
-    install -d -m 0755 "${xui_folder}/bin" || { rm -rf "$tmpdir"; return 1; }
+    command install -d -m 0755 "${xui_folder}/bin" || { rm -rf "$tmpdir"; return 1; }
 
     case "$kind" in
         openflux)
             url="$(tunnel_asset_url 'p1neappleXpress/OpenFlux' "openflux-linux-${openflux_arch}$")"
             [[ -n "$url" ]] || { LOGE 'OpenFlux Linux asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL "$url" -o "$tmpdir/openflux" || { rm -rf "$tmpdir"; return 1; }
-            install -m 0755 "$tmpdir/openflux" "${xui_folder}/bin/openflux-linux-${arch}"
+            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/openflux" || { rm -rf "$tmpdir"; return 1; }
+            command install -m 0755 "$tmpdir/openflux" "${xui_folder}/bin/openflux-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
             ;;
         wdtt)
             [[ "$arch" == "amd64" ]] || { LOGE 'WDTT Plus standalone installer currently supports amd64 only.'; rm -rf "$tmpdir"; return 1; }
             url="$(tunnel_asset_url 'Ivan4537/WDTT-Plus' 'WDTT-Plus-server-.*linux-amd64\.tar\.gz$')"
             [[ -n "$url" ]] || { LOGE 'WDTT Plus server bundle was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL "$url" -o "$tmpdir/wdtt.tar.gz" || { rm -rf "$tmpdir"; return 1; }
+            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/wdtt.tar.gz" || { rm -rf "$tmpdir"; return 1; }
             tar -xzf "$tmpdir/wdtt.tar.gz" -C "$tmpdir" || { rm -rf "$tmpdir"; return 1; }
             asset="$(find "$tmpdir" -type f -name wdtt-server -print -quit)"
             [[ -n "$asset" ]] || { LOGE 'wdtt-server is missing from the release bundle.'; rm -rf "$tmpdir"; return 1; }
-            install -m 0755 "$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}"
+            command install -m 0755 "$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
             ;;
         csqtt)
             command -v unzip > /dev/null 2>&1 || {
                 case "$release" in
                     ubuntu | debian | armbian) apt-get update && apt-get install -y unzip ;;
-                    centos | rhel | almalinux | rocky | ol) yum install -y unzip ;;
+                    centos | rhel | almalinux | rocky | ol | fedora) yum install -y unzip ;;
                     alpine) apk add --no-cache unzip ;;
                     *) LOGE 'Install unzip and retry.'; rm -rf "$tmpdir"; return 1 ;;
                 esac
             }
+            command -v unzip >/dev/null 2>&1 || { LOGE 'unzip is still unavailable.'; rm -rf "$tmpdir"; return 1; }
             url="$(tunnel_asset_url 'amurcanov/csqtt' 'universal.*\.apk$')"
             [[ -n "$url" ]] || url="$(tunnel_asset_url 'amurcanov/csqtt' '\.apk$')"
             [[ -n "$url" ]] || { LOGE 'CSQTT APK asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL "$url" -o "$tmpdir/csqtt.apk" || { rm -rf "$tmpdir"; return 1; }
+            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/csqtt.apk" || { rm -rf "$tmpdir"; return 1; }
             unzip -p "$tmpdir/csqtt.apk" "assets/csqtt-linux-${arch}" > "$tmpdir/csqtt" || { rm -rf "$tmpdir"; return 1; }
             [[ -s "$tmpdir/csqtt" ]] || { LOGE 'CSQTT server asset is missing from the APK.'; rm -rf "$tmpdir"; return 1; }
-            install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/csqtt-linux-${arch}"
+            command install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/csqtt-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
             ;;
         *) LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'; rm -rf "$tmpdir"; return 1 ;;
     esac
@@ -299,6 +333,21 @@ tunnels_command() {
                 printf '%s: server binary missing\n' "$item"
             fi
         done
+        for item in ip iptables sysctl; do
+            if command -v "$item" >/dev/null 2>&1; then
+                printf '%s: available\n' "$item"
+            else
+                printf '%s: MISSING\n' "$item"
+            fi
+        done
+        if [[ -c /dev/net/tun ]]; then
+            printf 'TUN: available\n'
+        else
+            printf 'TUN: MISSING (/dev/net/tun)\n'
+        fi
+        if [[ -r /proc/sys/net/ipv4/ip_forward ]]; then
+            printf 'IPv4 forwarding: %s\n' "$(< /proc/sys/net/ipv4/ip_forward)"
+        fi
         printf 'Recent sidecar errors: journalctl -u x-ui -n 100 --no-pager\n'
         return 0
     fi

@@ -307,6 +307,76 @@ func prepareCSQTT(inst Instance) error {
 	return tx.Commit()
 }
 
+// The upstream CSQTT deployer opens the peer port and configures forwarding
+// for its fixed TUN subnet. A managed sidecar does not run that deployer, so
+// apply the same minimal, idempotent rules before starting the process.
+func prepareCSQTTNetwork(port int) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if _, err := os.Stat("/dev/net/tun"); err != nil {
+		return fmt.Errorf("CSQTT requires /dev/net/tun: %w", err)
+	}
+	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0o644); err != nil {
+		return fmt.Errorf("enable IPv4 forwarding for CSQTT: %w", err)
+	}
+	output, err := exec.CommandContext(context.Background(), "ip", "-4", "route", "get", "1.1.1.1").Output()
+	if err != nil {
+		return fmt.Errorf("detect CSQTT WAN interface: %w", err)
+	}
+	words := strings.Fields(string(output))
+	wan := ""
+	for index, word := range words {
+		if word == "dev" && index+1 < len(words) {
+			wan = words[index+1]
+			break
+		}
+	}
+	if wan == "" {
+		return errors.New("CSQTT WAN interface not found")
+	}
+	rules := []struct {
+		table string
+		chain string
+		args  []string
+	}{
+		{"filter", "INPUT", []string{"-p", "udp", "--dport", strconv.Itoa(port), "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"filter", "INPUT", []string{"-i", "csqtt1", "-s", "10.66.67.0/24", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"filter", "FORWARD", []string{"-i", "csqtt1", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"filter", "FORWARD", []string{"-o", "csqtt1", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"nat", "POSTROUTING", []string{"-s", "10.66.67.0/24", "-o", wan, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "MASQUERADE"}},
+	}
+	for _, rule := range rules {
+		if err := ensureIPTablesRule(rule.table, rule.chain, rule.args); err != nil {
+			return fmt.Errorf("configure CSQTT firewall: %w", err)
+		}
+	}
+	return nil
+}
+
+func ensureIPTablesRule(table, chain string, args []string) error {
+	check := append([]string{"-w", "2", "-t", table, "-C", chain}, args...)
+	if exec.CommandContext(context.Background(), "iptables", check...).Run() == nil {
+		return nil
+	}
+	insert := append([]string{"-w", "2", "-t", table, "-I", chain, "1"}, args...)
+	if output, err := exec.CommandContext(context.Background(), "iptables", insert...).CombinedOutput(); err != nil {
+		return fmt.Errorf("iptables %s/%s: %w: %s", table, chain, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func prepareWDTTNetwork(port int) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	if _, err := os.Stat("/dev/net/tun"); err != nil {
+		return fmt.Errorf("WDTT requires /dev/net/tun: %w", err)
+	}
+	args := []string{"-p", "udp", "--dport", strconv.Itoa(port), "-m", "comment", "--comment", "3XUI_WDTT", "-j", "ACCEPT"}
+	return ensureIPTablesRule("filter", "INPUT", args)
+}
+
 func prepareOpenFlux(inst Instance) error {
 	secret := strings.TrimSpace(inst.Settings.Clients[0].Password)
 	decoded, err := hex.DecodeString(secret)
@@ -331,13 +401,19 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		if err := prepareWDTT(inst); err != nil {
 			return nil, err
 		}
-		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--wg-port", strconv.Itoa(inst.Settings.WGPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
+		if err := prepareWDTTNetwork(inst.Port); err != nil {
+			return nil, err
+		}
+		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--wg-port", strconv.Itoa(inst.Settings.WGPort), "--config-dir", dir), nil
 	case model.CSQTT:
 		if err := prepareCSQTT(inst); err != nil {
 			return nil, err
 		}
+		if err := prepareCSQTTNetwork(inst.Port); err != nil {
+			return nil, err
+		}
 		webPort := 48000 + inst.ID%10000
-		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--web-port", strconv.Itoa(webPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
+		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--web-port", strconv.Itoa(webPort), "--config-dir", dir), nil
 	case model.OpenFlux:
 		if len(inst.Settings.Clients) != 1 {
 			return nil, errors.New("OpenFlux inbound requires exactly one client")
