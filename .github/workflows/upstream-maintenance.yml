@@ -1,0 +1,78 @@
+name: Upstream update or rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Create an update or rollback pull request
+        required: true
+        type: choice
+        options:
+          - update
+          - rollback
+      target:
+        description: Upstream tag (update, e.g. v3.8.5) or update commit SHA (rollback)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Configure Git
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+      - name: Prepare snapshot update branch
+        if: inputs.action == 'update'
+        env:
+          TARGET: ${{ inputs.target }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$TARGET" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Invalid upstream release tag: $TARGET" >&2
+            exit 2
+          }
+          base="$(tr -d '[:space:]' < .upstream-base)"
+          [[ "$base" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid .upstream-base" >&2
+            exit 2
+          }
+          git remote add upstream https://github.com/MHSanaei/3x-ui.git
+          git fetch --no-tags upstream "$base" "refs/tags/$TARGET:refs/tags/upstream/$TARGET"
+          target_sha="$(git rev-parse "refs/tags/upstream/$TARGET^{commit}")"
+          branch="upstream-$TARGET-$GITHUB_RUN_ID"
+          git switch -c "$branch"
+
+          git diff --binary "$base" "$target_sha" --             .             ':(exclude)README.md'             ':(exclude)docs/extra-tunnels.md'             ':(exclude).github/workflows/**'             ':(exclude)install.sh'             ':(exclude)update.sh'             ':(exclude)x-ui.sh' > /tmp/upstream.patch
+
+          if [[ -s /tmp/upstream.patch ]]; then
+            git apply --3way --index /tmp/upstream.patch
+          fi
+          printf '%s\n' "$target_sha" > .upstream-base
+          git add .upstream-base
+          git commit -m "chore: update upstream to $TARGET"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch"             --title "chore: update to upstream $TARGET"             --body "Applies the source delta from MHSanaei/3x-ui $TARGET without importing upstream commit history or tags. CI must pass before merging."
+      - name: Prepare rollback branch
+        if: inputs.action == 'rollback'
+        env:
+          TARGET: ${{ inputs.target }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$TARGET" =~ ^[0-9a-f]{7,40}$ ]] || {
+            echo "Rollback target must be an upstream update commit SHA" >&2
+            exit 2
+          }
+          branch="rollback-${TARGET:0:12}-$GITHUB_RUN_ID"
+          git switch -c "$branch"
+          git revert --no-edit "$TARGET"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch"             --title "revert: roll back upstream update ${TARGET:0:12}"             --body "Reverts upstream snapshot update $TARGET. CI must pass before merging."
