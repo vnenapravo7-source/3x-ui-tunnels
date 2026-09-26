@@ -1152,6 +1152,9 @@ export default function InboundFormModal({
                     Protocols.MTPROTO,
                     Protocols.AMNEZIAWG,
                     Protocols.TUIC,
+                    Protocols.OPENFLUX,
+                    Protocols.WDTT,
+                    Protocols.CSQTT,
                   ] as string[]
                 ).includes(protocol) || isFallbackHost
                   ? [

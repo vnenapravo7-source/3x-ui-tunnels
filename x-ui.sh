@@ -274,8 +274,36 @@ install_tunnel_binary() {
 
 tunnels_command() {
     local action="$1" kind="${2:-all}" failed=0 installed=0
+    if [[ "$action" == "status" ]]; then
+        local item binary count status_arch
+        case "$(uname -m)" in
+            x86_64 | amd64) status_arch=amd64 ;;
+            aarch64 | arm64) status_arch=arm64 ;;
+            armv7l | armv7 | armhf) status_arch=armv7 ;;
+            *) status_arch="$(uname -m)" ;;
+        esac
+        for item in openflux wdtt csqtt; do
+            case "$item" in
+                openflux) binary="openflux-linux-${status_arch}" ;;
+                wdtt) binary="wdtt-server-linux-${status_arch}" ;;
+                csqtt) binary="csqtt-linux-${status_arch}" ;;
+            esac
+            if [[ -x "${xui_folder}/bin/${binary}" ]]; then
+                if command -v pgrep >/dev/null 2>&1; then
+                    count="$(pgrep -fc "^${xui_folder}/bin/${binary}([[:space:]]|$)" 2>/dev/null || true)"
+                else
+                    count='unknown (pgrep unavailable)'
+                fi
+                printf '%s: installed, running processes: %s\n' "$item" "${count:-0}"
+            else
+                printf '%s: server binary missing\n' "$item"
+            fi
+        done
+        printf 'Recent sidecar errors: journalctl -u x-ui -n 100 --no-pager\n'
+        return 0
+    fi
     [[ "$action" == "install" || "$action" == "update" ]] || {
-        LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'
+        LOGE 'Usage: x-ui tunnels install|update openflux|wdtt|csqtt|all, or x-ui tunnels status'
         return 1
     }
     if [[ "$kind" == "all" ]]; then

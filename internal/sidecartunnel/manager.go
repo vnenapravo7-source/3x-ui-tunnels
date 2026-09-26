@@ -3,6 +3,8 @@ package sidecartunnel
 import (
 	"bufio"
 	"context"
+	"crypto/ecdh"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -194,6 +196,9 @@ func passwordMap(inst Instance) map[string]map[string]any {
 
 func prepareWDTT(inst Instance) error {
 	dir := stateDir(inst)
+	if err := ensureWDTTKeys(dir); err != nil {
+		return err
+	}
 	path := filepath.Join(dir, "passwords.json")
 	data := map[string]any{}
 	if raw, err := os.ReadFile(path); err == nil {
@@ -209,6 +214,37 @@ func prepareWDTT(inst Instance) error {
 		return err
 	}
 	return writePrivate(path, raw)
+}
+
+// WDTT refuses to generate WireGuard keys when its access database already
+// contains clients. We seed that database before launch, so create the two
+// persistent keypairs first. Never replace a server's existing key file.
+func ensureWDTTKeys(dir string) error {
+	path := filepath.Join(dir, "wg-keys.dat")
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			return fmt.Errorf("invalid WDTT key file %s", path)
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	curve := ecdh.X25519()
+	server, err := curve.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	client, err := curve.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	lines := []string{
+		base64.StdEncoding.EncodeToString(server.Bytes()),
+		base64.StdEncoding.EncodeToString(server.PublicKey().Bytes()),
+		base64.StdEncoding.EncodeToString(client.Bytes()),
+		base64.StdEncoding.EncodeToString(client.PublicKey().Bytes()),
+	}
+	return writePrivate(path, []byte(strings.Join(lines, "\n")+"\n"))
 }
 
 func prepareCSQTT(inst Instance) error {

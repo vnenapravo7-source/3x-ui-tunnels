@@ -162,6 +162,8 @@ interface TunnelLinkFormValues {
   transportType: 'direct' | 'cupsonline' | 'yandex' | 'vyandex' | 'boards' | 'mailru';
   transportValue: string;
   priority: number;
+  fastYandexUrl: string;
+  fastMailruUrl: string;
 }
 
 const EMPTY: Values = {
@@ -307,6 +309,7 @@ export default function ClientFormModal({
   const [tunnelLinkOpen, setTunnelLinkOpen] = useState(false);
   const [tunnelLinkGenerating, setTunnelLinkGenerating] = useState(false);
   const [tunnelProtocol, setTunnelProtocol] = useState<TunnelProtocol>('openflux');
+  const [fastOpenFlux, setFastOpenFlux] = useState(false);
   const [tunnelLinkForm] = Form.useForm<TunnelLinkFormValues>();
   const tunnelTransportType = Form.useWatch('transportType', tunnelLinkForm);
   const [resetting, setResetting] = useState(false);
@@ -369,6 +372,7 @@ export default function ClientFormModal({
     const clientName = methods.getValues('email') || '';
     const clientPassword = methods.getValues('password') || RandomUtil.randomLowerAndNum(20);
     setTunnelProtocol('openflux');
+    setFastOpenFlux(false);
     tunnelLinkForm.setFieldsValue({
       protocol: 'openflux',
       name: clientName,
@@ -388,6 +392,8 @@ export default function ClientFormModal({
       transportType: 'direct',
       transportValue: '',
       priority: 0,
+      fastYandexUrl: '',
+      fastMailruUrl: '',
     });
     setTunnelLinkOpen(true);
   }
@@ -419,15 +425,22 @@ export default function ClientFormModal({
       context: values.context,
     };
     if (values.protocol === 'openflux') {
-      payload.transports = [
-        {
-          type: values.transportType,
-          priority: values.priority || 0,
-          ...(values.transportType === 'direct'
-            ? { dial: values.transportValue }
-            : { url: values.transportValue }),
-        },
-      ];
+      if (fastOpenFlux) payload.context = values.fastYandexUrl;
+      payload.transports = fastOpenFlux
+        ? [
+            { type: 'direct', priority: 100, dial: values.transportValue },
+            { type: 'yandex', priority: 75, url: values.fastYandexUrl },
+            { type: 'mailru', priority: 25, url: values.fastMailruUrl },
+          ]
+        : [
+            {
+              type: values.transportType,
+              priority: values.priority || 0,
+              ...(values.transportType === 'direct'
+                ? { dial: values.transportValue }
+                : { url: values.transportValue }),
+            },
+          ];
     }
     setTunnelLinkGenerating(true);
     try {
@@ -1716,6 +1729,15 @@ export default function ClientFormModal({
 
           {tunnelProtocol === 'openflux' ? (
             <>
+              <Button
+                style={{ marginBottom: 16 }}
+                onClick={() => {
+                  setFastOpenFlux((current) => !current);
+                  tunnelLinkForm.setFieldsValue({ transportType: 'direct', negotiate: true });
+                }}
+              >
+                {fastOpenFlux ? 'Single transport' : 'FastOpenFlux: Direct + Yandex + Mail.ru'}
+              </Button>
               <Row gutter={12}>
                 <Col span={12}>
                   <Form.Item name="codec" label="Codec" rules={[{ required: true }]}>
@@ -1747,6 +1769,7 @@ export default function ClientFormModal({
                 <Col span={10}>
                   <Form.Item name="transportType" label="Transport" rules={[{ required: true }]}>
                     <Select
+                      disabled={fastOpenFlux}
                       options={[
                         { value: 'direct', label: 'Direct' },
                         { value: 'yandex', label: 'Yandex' },
@@ -1771,6 +1794,24 @@ export default function ClientFormModal({
                   </Form.Item>
                 </Col>
               </Row>
+              {fastOpenFlux && (
+                <>
+                  <Form.Item
+                    name="fastYandexUrl"
+                    label="Yandex Docs link"
+                    rules={[{ required: true }]}
+                  >
+                    <Input placeholder="https://disk.yandex.ru/i/..." />
+                  </Form.Item>
+                  <Form.Item
+                    name="fastMailruUrl"
+                    label="Mail.ru Docs link"
+                    rules={[{ required: true }]}
+                  >
+                    <Input placeholder="https://cloud.mail.ru/public/..." />
+                  </Form.Item>
+                </>
+              )}
             </>
           ) : (
             <>

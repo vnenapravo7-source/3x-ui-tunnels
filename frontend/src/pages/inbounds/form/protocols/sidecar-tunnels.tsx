@@ -38,7 +38,7 @@ export function OpenFluxFields() {
       <Alert
         type="info"
         showIcon
-        message="OpenFlux runs as a managed exit process. Cups.online creates rooms automatically."
+        message="Session mode enables one encrypted session across several transports. Cups.online creates its room automatically."
         style={{ marginBottom: 16 }}
       />
       <Row gutter={12}>
@@ -63,12 +63,38 @@ export function OpenFluxFields() {
           </FormField>
         </Col>
         <Col span={8}>
-          <FormField name={['settings', 'negotiate']} label="Multi-session" valueProp="checked">
+          <FormField
+            name={['settings', 'negotiate']}
+            label="Session mode / multi-connect"
+            valueProp="checked"
+          >
             <Switch />
           </FormField>
         </Col>
       </Row>
       <Space orientation="vertical" style={{ width: '100%' }} size="small">
+        <Button
+          onClick={() => {
+            setValue('settings.mode' as never, 'l4' as never, { shouldDirty: true });
+            setValue('settings.codec' as never, 'batched' as never, { shouldDirty: true });
+            setValue('settings.negotiate' as never, true as never, { shouldDirty: true });
+            setValue(
+              'settings.transports' as never,
+              [
+                { type: 'direct', url: '', priority: 100 },
+                { type: 'yandex', url: '', priority: 75 },
+                { type: 'mailru', url: '', priority: 25 },
+              ] as never,
+              { shouldDirty: true },
+            );
+          }}
+        >
+          FastOpenFlux: Direct + Yandex Docs + Mail.ru Docs
+        </Button>
+        <Alert
+          type="info"
+          message="For FastOpenFlux, enter public Yandex and Mail.ru document links below. Direct uses the inbound port."
+        />
         {transports.map((item, index) => (
           <Row gutter={8} key={`${index}-${item.type}`} align="middle">
             <Col span={7}>
