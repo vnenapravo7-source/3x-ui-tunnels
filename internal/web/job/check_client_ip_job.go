@@ -510,43 +510,58 @@ func (j *CheckClientIpJob) updateInboundClientIps(tx *gorm.DB, inboundClientIps 
 		return nil, 0
 	}
 
-	// Parse old IPs from database
-	var oldIpsWithTime []IPWithTimestamp
-	if inboundClientIps.Ips != "" {
-		_ = json.Unmarshal([]byte(inboundClientIps.Ips), &oldIpsWithTime)
-	}
-
-	ipMap := mergeClientIps(oldIpsWithTime, newIpsWithTime, time.Now().Unix()-ipStaleAfterSeconds, observedAreLive)
-
 	// only ips seen in this scan count toward the limit. see
 	// partitionLiveIps.
 	observedThisScan := make(map[string]bool, len(newIpsWithTime))
 	for _, ipTime := range newIpsWithTime {
 		observedThisScan[ipTime.IP] = true
 	}
-	liveIps, historicalIps := partitionLiveIps(ipMap, observedThisScan)
+	staleCutoff := time.Now().Unix() - ipStaleAfterSeconds
 
-	// historical db-only ips are excluded from this count on purpose.
-	limitedIps, allowedIps := j.allowlist.split(liveIps)
-	keptLive, bannedLive := selectIpsToBan(limitedIps, limitIp)
-	// Allowlisted addresses stay connected and out of the count: charging them
-	// against the limit would still cut the shared network the entry protects.
-	keptLive = append(keptLive, allowedIps...)
+	// Node sync merges into the same blob (#6587): compare-and-set it, and on a
+	// miss re-read and re-merge so neither writer drops the other's IPs.
+	for range service.ClientIpCasRetries {
+		var oldIpsWithTime []IPWithTimestamp
+		if inboundClientIps.Ips != "" {
+			_ = json.Unmarshal([]byte(inboundClientIps.Ips), &oldIpsWithTime)
+		}
+		ipMap := mergeClientIps(oldIpsWithTime, newIpsWithTime, staleCutoff, observedAreLive)
+		liveIps, historicalIps := partitionLiveIps(ipMap, observedThisScan)
 
-	// keep kept-live + historical in the blob so the panel keeps showing recently
-	// seen ips; banned live ips reappear in the next scan if they reconnect.
-	dbIps := make([]IPWithTimestamp, 0, len(keptLive)+len(historicalIps))
-	dbIps = append(dbIps, keptLive...)
-	dbIps = append(dbIps, historicalIps...)
-	jsonIps, _ := json.Marshal(dbIps)
-	inboundClientIps.Ips = string(jsonIps)
+		// historical db-only ips are excluded from this count on purpose.
+		limitedIps, allowedIps := j.allowlist.split(liveIps)
+		keptLive, bannedLive := selectIpsToBan(limitedIps, limitIp)
+		// Allowlisted addresses stay connected and out of the count: charging them
+		// against the limit would still cut the shared network the entry protects.
+		keptLive = append(keptLive, allowedIps...)
 
-	if err := tx.Save(inboundClientIps).Error; err != nil {
-		logger.Error("failed to save inboundClientIps:", err)
-		return nil, 0
+		// keep kept-live + historical in the blob so the panel keeps showing recently
+		// seen ips; banned live ips reappear in the next scan if they reconnect.
+		dbIps := make([]IPWithTimestamp, 0, len(keptLive)+len(historicalIps))
+		dbIps = append(dbIps, keptLive...)
+		dbIps = append(dbIps, historicalIps...)
+		jsonIps, _ := json.Marshal(dbIps)
+		newIps := string(jsonIps)
+		if newIps == inboundClientIps.Ips {
+			return bannedLive, len(keptLive)
+		}
+
+		updated, err := service.CasUpdateInboundClientIps(tx, inboundClientIps.Id, inboundClientIps.Ips, newIps)
+		if err != nil {
+			logger.Error("failed to save inboundClientIps:", err)
+			return nil, 0
+		}
+		if updated {
+			inboundClientIps.Ips = newIps
+			return bannedLive, len(keptLive)
+		}
+		if err := tx.Where("id = ?", inboundClientIps.Id).First(inboundClientIps).Error; err != nil {
+			logger.Error("failed to re-read inboundClientIps after a concurrent write:", err)
+			return nil, 0
+		}
 	}
-
-	return bannedLive, len(keptLive)
+	logger.Error("failed to save inboundClientIps: exhausted CAS retries")
+	return nil, 0
 }
 
 // pendingBan carries one client's enforcement outcome from inside the scan's
