@@ -13,6 +13,11 @@ import { TunnelInboundSettingsSchema } from './tunnel';
 import { VlessInboundSettingsSchema } from './vless';
 import { VmessInboundSettingsSchema } from './vmess';
 import { WireguardInboundSettingsSchema } from './wireguard';
+import {
+  CsqttInboundSettingsSchema,
+  OpenFluxInboundSettingsSchema,
+  WdttInboundSettingsSchema,
+} from './sidecar-tunnels';
 
 export * from './amneziawg';
 export * from './http';
@@ -27,6 +32,7 @@ export * from './tunnel';
 export * from './vless';
 export * from './vmess';
 export * from './wireguard';
+export * from './sidecar-tunnels';
 
 // Tagged-wrapper discriminated union. The discriminator (`protocol`) lives on
 // the wrapper, not inside `settings`, mirroring the wire format Xray emits:
@@ -47,5 +53,8 @@ export const InboundSettingsSchema = z.discriminatedUnion('protocol', [
   z.object({ protocol: z.literal('mtproto'), settings: MtprotoInboundSettingsSchema }),
   z.object({ protocol: z.literal('amneziawg'), settings: AmneziawgInboundSettingsSchema }),
   z.object({ protocol: z.literal('tuic'), settings: TuicInboundSettingsSchema }),
+  z.object({ protocol: z.literal('openflux'), settings: OpenFluxInboundSettingsSchema }),
+  z.object({ protocol: z.literal('wdtt'), settings: WdttInboundSettingsSchema }),
+  z.object({ protocol: z.literal('csqtt'), settings: CsqttInboundSettingsSchema }),
 ]);
 export type InboundSettings = z.infer<typeof InboundSettingsSchema>;

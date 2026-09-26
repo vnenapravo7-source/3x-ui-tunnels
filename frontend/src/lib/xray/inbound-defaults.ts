@@ -17,6 +17,11 @@ import type { TunnelInboundSettings } from '@/schemas/protocols/inbound/tunnel';
 import type { VlessClient, VlessInboundSettings } from '@/schemas/protocols/inbound/vless';
 import type { VmessClient, VmessInboundSettings } from '@/schemas/protocols/inbound/vmess';
 import type { WireguardInboundSettings } from '@/schemas/protocols/inbound/wireguard';
+import type {
+  CsqttInboundSettings,
+  OpenFluxInboundSettings,
+  WdttInboundSettings,
+} from '@/schemas/protocols/inbound/sidecar-tunnels';
 
 // Plain-object factories for protocol clients. Each returns a Zod-parsable
 // object matching the wire shape. Random fields (id, password, auth,
@@ -357,6 +362,25 @@ export function createDefaultTuicInboundSettings(): TuicInboundSettings {
   };
 }
 
+export function createDefaultOpenFluxInboundSettings(): OpenFluxInboundSettings {
+  return {
+    codec: 'batched',
+    mode: 'l4',
+    negotiate: true,
+    sessionContextUrl: '',
+    transports: [{ type: 'cupsonline', url: '', priority: 100 }],
+    clients: [],
+  };
+}
+
+export function createDefaultWdttInboundSettings(): WdttInboundSettings {
+  return { wgPort: 56001, localPort: 9000, hashes: [], clients: [] };
+}
+
+export function createDefaultCsqttInboundSettings(): CsqttInboundSettings {
+  return { hashes: [], clients: [] };
+}
+
 // Protocol-aware dispatch over every inbound-settings factory. Mirrors
 // the legacy `Inbound.Settings.getSettings(protocol)` dispatcher, but
 // returns a plain Zod-parsable object instead of a class instance.
@@ -375,7 +399,10 @@ export type AnyInboundSettings =
   | WireguardInboundSettings
   | MtprotoInboundSettings
   | AmneziawgInboundSettings
-  | TuicInboundSettings;
+  | TuicInboundSettings
+  | OpenFluxInboundSettings
+  | WdttInboundSettings
+  | CsqttInboundSettings;
 
 export function createDefaultInboundSettings(protocol: string): AnyInboundSettings | null {
   switch (protocol) {
@@ -405,6 +432,12 @@ export function createDefaultInboundSettings(protocol: string): AnyInboundSettin
       return createDefaultAmneziawgInboundSettings();
     case 'tuic':
       return createDefaultTuicInboundSettings();
+    case 'openflux':
+      return createDefaultOpenFluxInboundSettings();
+    case 'wdtt':
+      return createDefaultWdttInboundSettings();
+    case 'csqtt':
+      return createDefaultCsqttInboundSettings();
     default:
       return null;
   }

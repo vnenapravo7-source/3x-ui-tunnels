@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -368,6 +369,9 @@ func (s *ClientService) AddInboundClient(inboundSvc *InboundService, data *model
 	if err != nil {
 		return false, err
 	}
+	if oldInbound.Protocol == model.OpenFlux && len(existingClients)+len(clients) > 1 {
+		return false, common.NewError("OpenFlux inbound supports one client because its encryption key belongs to the whole exit process")
+	}
 
 	// A client already on this inbound is skipped instead of appended again:
 	// checkEmailsExistForClients exempts a matching subId so one identity can
@@ -470,6 +474,16 @@ func (s *ClientService) AddInboundClient(inboundSvc *InboundService, data *model
 			}
 			if client.Email == "" {
 				return false, common.NewError("empty client email")
+			}
+		case "openflux", "wdtt", "csqtt":
+			if client.Password == "" {
+				return false, common.NewErrorf("%s client requires a password", oldInbound.Protocol)
+			}
+			if oldInbound.Protocol == model.OpenFlux {
+				decoded, keyErr := hex.DecodeString(client.Password)
+				if keyErr != nil || len(decoded) != 32 {
+					return false, common.NewError("OpenFlux client key must contain exactly 64 hexadecimal characters")
+				}
 			}
 		default:
 			if client.ID == "" {
@@ -585,6 +599,8 @@ func (s *ClientService) AddInboundClient(inboundSvc *InboundService, data *model
 			inboundSvc.applyLocalAmneziaWG(oldInbound.Id)
 		} else if oldInbound.Protocol == model.TUIC {
 			inboundSvc.applyLocalTuic(oldInbound.Id)
+		} else if isSidecarTunnelProtocol(oldInbound.Protocol) {
+			inboundSvc.applyLocalSidecarTunnel(oldInbound.Id)
 		} else {
 			for _, client := range clients {
 				if len(client.Email) == 0 {
@@ -690,6 +706,8 @@ func (s *ClientService) UpdateInboundClient(inboundSvc *InboundService, data *mo
 		newClientId = clients[0].Email
 	case "mtproto":
 		newClientId = clients[0].Email
+	case "openflux", "wdtt", "csqtt":
+		newClientId = clients[0].Password
 	default:
 		newClientId = clients[0].ID
 	}
@@ -708,6 +726,12 @@ func (s *ClientService) UpdateInboundClient(inboundSvc *InboundService, data *mo
 
 	if newClientId == "" || clientIndex == -1 {
 		return false, common.NewError("empty client ID")
+	}
+	if oldInbound.Protocol == model.OpenFlux {
+		decoded, keyErr := hex.DecodeString(clients[0].Password)
+		if keyErr != nil || len(decoded) != 32 {
+			return false, common.NewError("OpenFlux client key must contain exactly 64 hexadecimal characters")
+		}
 	}
 	if strings.TrimSpace(clients[0].Email) == "" {
 		return false, common.NewError("client email is required")
@@ -1017,6 +1041,8 @@ func (s *ClientService) UpdateInboundClient(inboundSvc *InboundService, data *mo
 				inboundSvc.applyLocalAmneziaWG(oldInbound.Id)
 			} else if oldInbound.Protocol == model.TUIC {
 				inboundSvc.applyLocalTuic(oldInbound.Id)
+			} else if isSidecarTunnelProtocol(oldInbound.Protocol) {
+				inboundSvc.applyLocalSidecarTunnel(oldInbound.Id)
 			} else {
 				if oldClients[clientIndex].Enable {
 					err1 := rt.RemoveUser(context.Background(), oldInbound, oldEmail)
@@ -1209,6 +1235,8 @@ func (s *ClientService) DelInboundClientByEmail(inboundSvc *InboundService, inbo
 				inboundSvc.applyLocalAmneziaWG(oldInbound.Id)
 			} else if oldInbound.Protocol == model.TUIC {
 				inboundSvc.applyLocalTuic(oldInbound.Id)
+			} else if isSidecarTunnelProtocol(oldInbound.Protocol) {
+				inboundSvc.applyLocalSidecarTunnel(oldInbound.Id)
 			} else if needApiDel {
 				// Local inbound: a disabled client isn't in the running Xray, so only
 				// a live one (needApiDel) needs an API removal.

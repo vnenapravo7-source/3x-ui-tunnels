@@ -64,6 +64,9 @@ const MULTI_CLIENT_PROTOCOLS = new Set([
   'mtproto',
   'amneziawg',
   'tuic',
+  'openflux',
+  'wdtt',
+  'csqtt',
 ]);
 
 const CLIENT_FORM_MODAL_Z_INDEX = 1000;
@@ -378,7 +381,9 @@ export default function ClientFormModal({
       peerPort: 56000,
       negotiate: true,
       codec: 'batched',
-      secret: clientPassword.length >= 16 ? clientPassword : RandomUtil.randomLowerAndNum(24),
+      secret: /^[0-9a-f]{64}$/i.test(clientPassword)
+        ? clientPassword
+        : RandomUtil.randomSeq(64, { type: 'hex' }),
       context: '',
       transportType: 'direct',
       transportValue: '',
@@ -394,7 +399,7 @@ export default function ClientFormModal({
     } catch {
       return;
     }
-    const hashes = values.hashes
+    const hashes = (values.hashes ?? '')
       .split(/[\n,]/)
       .map((item) => item.trim())
       .filter(Boolean);
@@ -573,6 +578,19 @@ export default function ClientFormModal({
     return ids;
   }, [inbounds]);
 
+  const openfluxIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const row of inbounds || []) {
+      if (row && row.protocol === 'openflux') ids.add(row.id);
+    }
+    return ids;
+  }, [inbounds]);
+
+  const hasOpenFlux = useMemo(
+    () => (inboundIds || []).some((id) => openfluxIds.has(id)),
+    [inboundIds, openfluxIds],
+  );
+
   const hasTuic = useMemo(
     () => (inboundIds || []).some((id) => tuicIds.has(id)),
     [inboundIds, tuicIds],
@@ -672,6 +690,14 @@ export default function ClientFormModal({
       methods.setValue('password', RandomUtil.randomShadowsocksPassword(ss2022Method));
     }
   }, [ss2022Method, methods]);
+
+  useEffect(() => {
+    if (!hasOpenFlux) return;
+    const current = methods.getValues('password');
+    if (!/^[0-9a-f]{64}$/i.test(current)) {
+      methods.setValue('password', RandomUtil.randomSeq(64, { type: 'hex' }));
+    }
+  }, [hasOpenFlux, methods]);
 
   useEffect(() => {
     if (showMtproto && !secret) {
@@ -1670,8 +1696,8 @@ export default function ClientFormModal({
         destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
-          Generates a client import link only. Installing and running the corresponding server
-          sidecar is a separate step.
+          Import-only helper for an existing external server. For a managed server, create OpenFlux,
+          WDTT or CSQTT in Inbounds and attach this client to it.
         </Typography.Paragraph>
         <Form<TunnelLinkFormValues> form={tunnelLinkForm} layout="vertical">
           <Form.Item name="protocol" label="Format" rules={[{ required: true }]}>
@@ -1710,7 +1736,10 @@ export default function ClientFormModal({
               <Form.Item
                 name="secret"
                 label="Encryption secret"
-                rules={[{ required: true, min: 16, message: 'Use at least 16 characters' }]}
+                rules={[
+                  { required: true },
+                  { pattern: /^[0-9a-fA-F]{64}$/, message: 'Use a 64-character hexadecimal key' },
+                ]}
               >
                 <Input.Password />
               </Form.Item>
@@ -1720,7 +1749,6 @@ export default function ClientFormModal({
                     <Select
                       options={[
                         { value: 'direct', label: 'Direct' },
-                        { value: 'cupsonline', label: 'Cups.online' },
                         { value: 'yandex', label: 'Yandex' },
                         { value: 'vyandex', label: 'vYandex' },
                         { value: 'boards', label: 'Boards' },
@@ -1743,9 +1771,6 @@ export default function ClientFormModal({
                   </Form.Item>
                 </Col>
               </Row>
-              <Form.Item name="context" label="Context (optional)">
-                <Input />
-              </Form.Item>
             </>
           ) : (
             <>

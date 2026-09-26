@@ -14,6 +14,7 @@ import {
   VlessClientSchema,
   VmessClientSchema,
   WireguardClientSchema,
+  SidecarTunnelClientSchema,
 } from '@/schemas/protocols/inbound';
 import type { StreamSettings } from '@/schemas/api/inbound';
 import type { Sniffing } from '@/schemas/primitives';
@@ -276,6 +277,10 @@ function clientSchemaForProtocol(protocol: string): z.ZodType | null {
       return AmneziawgClientSchema;
     case 'tuic':
       return TuicClientSchema;
+    case 'openflux':
+    case 'wdtt':
+    case 'csqtt':
+      return SidecarTunnelClientSchema;
     default:
       return null;
   }

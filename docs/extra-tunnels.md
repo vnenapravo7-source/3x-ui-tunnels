@@ -1,39 +1,30 @@
-# OpenFlux, WDTT-Plus and CSQTT
+# OpenFlux, WDTT-Plus и CSQTT
 
-This fork intentionally keeps these projects as sidecars instead of copying
-their control planes into 3x-ui. 3x-ui owns the customer, expiry and
-subscription; the dedicated service owns its dataplane and share-link payload.
+Форк запускает эти серверы отдельными процессами и не переносит их панели управления внутрь 3x-ui. Установите компоненты один раз:
 
-## Add a configuration to a client
+```bash
+x-ui tunnels install all
+```
 
-1. Create the user/configuration in the corresponding OpenFlux, WDTT-Plus or
-   CSQTT server.
-2. In 3x-ui open **Clients**, edit the client, choose **Links**, then select
-   **Create tunnel link**.
-3. Pick the format and enter the public endpoint plus that user's secret. The
-   panel generates the official `openflux://v1/`, `wdtt://connect` or
-   `csqtt://connect` payload and adds it to the client. You can still paste an
-   existing link manually.
+После обновления компонентов используйте `x-ui tunnels update all`.
 
-The link is then emitted byte-for-byte in the client's raw subscription and on
-the HTML subscription page, where it has its own copy button and QR code. It is
-not emitted in Xray JSON or Clash/Mihomo subscriptions because those clients do
-not implement these protocols.
+## Использование
 
-Native 3x-ui MTProto and AmneziaWG inbounds remain managed by 3x-ui and appear
-in the same raw/HTML subscription as `tg://proxy` and `vpn://` entries.
+1. Откройте **Входящие** и создайте OpenFlux, WDTT или CSQTT.
+2. Добавьте клиента. Его пароль и срок действия синхронизируются с серверным процессом.
+3. Откройте подписку клиента: там появится `openflux://`, `wdtt://` или `csqtt://` с кнопками копирования и QR-кодом.
 
-## Operational boundary
+OpenFlux поддерживает до восьми транспортов с приоритетами. Для Cups.online адрес вводить не нужно: сервер создаёт комнату, панель сохраняет код и автоматически включает его в подписку. Поле контекста скрыто — значение для шифрования выводится из адреса документа, а для Cups используется стабильный контекст `cupsonline`. Один OpenFlux inbound использует один клиентский ключ, потому что ключ принадлежит всему exit-процессу.
 
-- OpenFlux, WDTT-Plus and CSQTT binaries are not bundled or silently
-  downloaded. The link builder creates the client import payload; it does not
-  create the matching server-side account yet.
-- CSQTT is licensed for noncommercial use unless you have a separate licence
-  from its author.
-- WDTT-Plus is GPL-3.0. If you redistribute a modified binary, comply with its
-  source-code obligations.
-- Treat every share link as a secret. It can contain passwords or keys.
+WDTT и CSQTT используют UDP-порт inbound. WDTT дополнительно показывает внутренний WireGuard-порт. Хеши VK необязательны и передаются клиенту в ссылке.
 
-Reusable server patches and deployment patterns are available in
-[`SanityProtocol/swg-panel`](https://github.com/SanityProtocol/swg-panel). This
-fork does not redistribute its WDTT/CSQTT builds.
+Ссылки выдаются в raw/HTML-подписках. Они не добавляются в Xray JSON или Clash/Mihomo, поскольку эти клиенты не реализуют протоколы.
+
+## Граница ответственности и лицензии
+
+- Серверные файлы загружаются только по явной команде `x-ui tunnels install/update` из официальных GitHub Releases.
+- CSQTT распространяется по PolyForm Noncommercial 1.0.0; коммерческое использование требует отдельного разрешения автора.
+- WDTT-Plus распространяется по GPL-3.0. При распространении изменённого бинарника соблюдайте требования к исходному коду.
+- Ссылка содержит ключ или пароль и должна храниться как секрет.
+
+Использованы открытые наработки [OpenFlux](https://github.com/p1neappleXpress/OpenFlux), [WDTT-Plus](https://github.com/Ivan4537/WDTT-Plus), [CSQTT](https://github.com/amurcanov/csqtt) и идеи интеграции из [SanityProtocol/swg-panel](https://github.com/SanityProtocol/swg-panel/issues).

@@ -68,6 +68,9 @@ import {
   TunnelFields,
   VlessFields,
   WireguardFields,
+  CsqttFields,
+  OpenFluxFields,
+  WdttFields,
 } from './protocols';
 import {
   GrpcForm,
@@ -279,7 +282,10 @@ export default function InboundFormModal({
     protocol !== Protocols.HYSTERIA &&
     protocol !== Protocols.WIREGUARD &&
     protocol !== Protocols.TUNNEL &&
-    protocol !== Protocols.TUIC;
+    protocol !== Protocols.TUIC &&
+    protocol !== Protocols.OPENFLUX &&
+    protocol !== Protocols.WDTT &&
+    protocol !== Protocols.CSQTT;
 
   const wPort = useWatch({ control, name: 'port' });
   const wListen = (useWatch({ control, name: 'listen' }) ?? '') as string;
@@ -800,6 +806,12 @@ export default function InboundFormModal({
       )}
 
       {protocol === Protocols.TUIC && <TuicFields />}
+
+      {protocol === Protocols.OPENFLUX && <OpenFluxFields />}
+
+      {protocol === Protocols.WDTT && <WdttFields />}
+
+      {protocol === Protocols.CSQTT && <CsqttFields />}
 
       {protocol === Protocols.TUN && <TunFields />}
 

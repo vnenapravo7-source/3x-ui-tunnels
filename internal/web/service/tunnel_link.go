@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -169,8 +170,11 @@ func buildOpenFluxLink(req TunnelLinkRequest) (string, error) {
 		return "", common.NewError("OpenFlux codec must be batched or legacy")
 	}
 	secret := strings.TrimSpace(req.Secret)
-	if secret != "" && len(secret) < 16 {
-		return "", common.NewError("OpenFlux secret must contain at least 16 characters")
+	if secret != "" {
+		decoded, err := hex.DecodeString(secret)
+		if err != nil || len(decoded) != 32 {
+			return "", common.NewError("OpenFlux secret must be 64 hexadecimal characters")
+		}
 	}
 	if req.Negotiate && secret == "" {
 		return "", common.NewError("OpenFlux Session mode requires a secret")

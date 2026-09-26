@@ -43,8 +43,9 @@ func TestBuildCSQTTLinkUsesLiteralPlusSeparator(t *testing.T) {
 }
 
 func TestBuildOpenFluxLinkMatchesV1Payload(t *testing.T) {
+	secret := strings.Repeat("01", 32)
 	link, err := BuildTunnelLink(TunnelLinkRequest{
-		Protocol: "openflux", Name: "office", Negotiate: true, Secret: "0123456789abcdef",
+		Protocol: "openflux", Name: "office", Negotiate: true, Secret: secret,
 		Context: "direct", Transports: []TunnelLinkTransport{{Type: "direct", Dial: "vpn.example.com:443"}},
 	})
 	if err != nil {
@@ -65,7 +66,7 @@ func TestBuildOpenFluxLinkMatchesV1Payload(t *testing.T) {
 	if err := json.Unmarshal(raw, &share); err != nil {
 		t.Fatal(err)
 	}
-	if share.Name != "office" || share.Secret != "0123456789abcdef" || len(share.Transports) != 1 || share.Transports[0].Dial != "vpn.example.com:443" {
+	if share.Name != "office" || share.Secret != secret || len(share.Transports) != 1 || share.Transports[0].Dial != "vpn.example.com:443" {
 		t.Fatalf("unexpected OpenFlux payload: %#v", share)
 	}
 }

@@ -17,6 +17,9 @@ const MULTI_USER_PROTOCOLS = new Set([
   'mtproto',
   'amneziawg',
   'tuic',
+  'openflux',
+  'wdtt',
+  'csqtt',
 ]);
 
 interface BulkDetachInboundsModalProps {

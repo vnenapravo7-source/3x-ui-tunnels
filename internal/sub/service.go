@@ -822,8 +822,110 @@ func (s *SubService) GetLink(inbound *model.Inbound, email string) string {
 		return s.genAmneziaWGLink(inbound, email)
 	case "tuic":
 		return s.genTuicLink(inbound, email)
+	case "openflux", "wdtt", "csqtt":
+		return s.genSidecarTunnelLink(inbound, email)
 	}
 	return ""
+}
+
+func stringSlice(value any) []string {
+	raw, ok := value.([]any)
+	if !ok {
+		if direct, ok := value.([]string); ok {
+			return direct
+		}
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			out = append(out, text)
+		}
+	}
+	return out
+}
+
+func intSetting(settings map[string]any, key string, fallback int) int {
+	if value, ok := settings[key].(float64); ok && value > 0 {
+		return int(value)
+	}
+	return fallback
+}
+
+func (s *SubService) genSidecarTunnelLink(inbound *model.Inbound, email string) string {
+	client, ok := s.clientForLink(inbound, email)
+	if !ok || strings.TrimSpace(client.Password) == "" {
+		return ""
+	}
+	settings := s.linkSettings(inbound)
+	req := service.TunnelLinkRequest{
+		Protocol: string(inbound.Protocol),
+		Name:     s.genRemark(inbound, email, "", ""),
+		Host:     s.resolveInboundAddress(inbound),
+		Password: client.Password,
+		Hashes:   stringSlice(settings["hashes"]),
+	}
+
+	switch inbound.Protocol {
+	case model.WDTT:
+		req.DTLSPort = inbound.Port
+		req.WGPort = intSetting(settings, "wgPort", 56001)
+		req.LocalPort = intSetting(settings, "localPort", 9000)
+	case model.CSQTT:
+		req.PeerPort = inbound.Port
+	case model.OpenFlux:
+		req.Codec, _ = settings["codec"].(string)
+		req.Negotiate, _ = settings["negotiate"].(bool)
+		req.Secret = client.Password
+		req.Context, _ = settings["sessionContextUrl"].(string)
+		raw, _ := settings["transports"].([]any)
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			transport := service.TunnelLinkTransport{}
+			transport.Type, _ = m["type"].(string)
+			transport.URL, _ = m["url"].(string)
+			transport.Name, _ = m["name"].(string)
+			if priority, ok := m["priority"].(float64); ok {
+				transport.Priority = int(priority)
+			}
+			if transport.Type == "direct" {
+				transport.Dial = joinHostPort(req.Host, inbound.Port)
+			}
+			if transport.Type == "cupsonline" && transport.URL == "" {
+				transport.URL, _ = settings["cupsCode"].(string)
+			}
+			req.Transports = append(req.Transports, transport)
+		}
+		if req.Context == "" {
+			for _, transport := range req.Transports {
+				if transport.Type == "yandex" && transport.URL != "" {
+					req.Context = transport.URL
+					break
+				}
+			}
+		}
+		if req.Context == "" {
+			for _, transport := range req.Transports {
+				if transport.URL != "" {
+					req.Context = transport.URL
+					break
+				}
+			}
+		}
+		if req.Context == "" {
+			req.Context = "cupsonline"
+		}
+	}
+
+	link, err := service.BuildTunnelLink(req)
+	if err != nil {
+		logger.Debug("sidecar tunnel link unavailable for inbound", inbound.Id, ":", err)
+		return ""
+	}
+	return link
 }
 
 func (s *SubService) genTuicLink(inbound *model.Inbound, email string) string {

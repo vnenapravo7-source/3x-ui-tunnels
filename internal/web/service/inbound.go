@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1133,6 +1134,17 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	if err != nil {
 		return inbound, false, err
 	}
+	if inbound.Protocol == model.OpenFlux {
+		if len(clients) > 1 {
+			return inbound, false, common.NewError("OpenFlux inbound supports exactly one client")
+		}
+		for _, client := range clients {
+			decoded, keyErr := hex.DecodeString(client.Password)
+			if keyErr != nil || len(decoded) != 32 {
+				return inbound, false, common.NewError("OpenFlux client key must contain exactly 64 hexadecimal characters")
+			}
+		}
+	}
 	existEmail, err := s.clientService.checkEmailsExistForClients(s, clients)
 	if err != nil {
 		return inbound, false, err
@@ -1181,6 +1193,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	}
 
 	// Secure client ID
+	if inbound.Protocol == model.OpenFlux && len(clients) > 1 {
+		return inbound, false, common.NewError("OpenFlux inbound supports exactly one client")
+	}
 	for _, client := range clients {
 		switch inbound.Protocol {
 		case "trojan":
@@ -1212,6 +1227,19 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 			}
 			if client.Password == "" {
 				return inbound, false, common.NewError("tuic client requires a password")
+			}
+			if client.Email == "" {
+				return inbound, false, common.NewError("empty client email")
+			}
+		case "openflux", "wdtt", "csqtt":
+			if client.Password == "" {
+				return inbound, false, common.NewErrorf("%s client requires a password", inbound.Protocol)
+			}
+			if inbound.Protocol == model.OpenFlux {
+				decoded, keyErr := hex.DecodeString(client.Password)
+				if keyErr != nil || len(decoded) != 32 {
+					return inbound, false, common.NewError("OpenFlux client key must contain exactly 64 hexadecimal characters")
+				}
 			}
 			if client.Email == "" {
 				return inbound, false, common.NewError("empty client email")
@@ -1331,7 +1359,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 								logger.Debug("New inbound added on", rt.Name(), ":", inbound.Tag)
 							} else {
 								logger.Debug("Unable to add inbound on", rt.Name(), ":", err1)
-								if inbound.Protocol != model.MTProto && inbound.Protocol != model.TUIC {
+								if inbound.Protocol != model.MTProto && inbound.Protocol != model.TUIC && !isSidecarTunnelProtocol(inbound.Protocol) {
 									needRestart = true
 								}
 							}

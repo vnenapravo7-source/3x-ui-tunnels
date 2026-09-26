@@ -12,6 +12,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/amneziawgnet"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/mtproto"
+	"github.com/mhsanaei/3x-ui/v3/internal/sidecartunnel"
 	"github.com/mhsanaei/3x-ui/v3/internal/tuic"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 )
@@ -49,6 +50,13 @@ func (l *Local) withAPI(fn func(api *xray.XrayAPI) error) error {
 }
 
 func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
+	if ib.Protocol == model.OpenFlux || ib.Protocol == model.WDTT || ib.Protocol == model.CSQTT {
+		inst, ok := sidecartunnel.InstanceFromInbound(ib)
+		if !ok {
+			return nil
+		}
+		return sidecartunnel.GetManager().Ensure(inst)
+	}
 	if ib.Protocol == model.MTProto {
 		inst, ok := mtproto.InstanceFromInbound(ib)
 		if !ok {
@@ -102,6 +110,10 @@ func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
 }
 
 func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
+	if ib.Protocol == model.OpenFlux || ib.Protocol == model.WDTT || ib.Protocol == model.CSQTT {
+		sidecartunnel.GetManager().Remove(ib.Id)
+		return nil
+	}
 	if ib.Protocol == model.MTProto {
 		mtproto.GetManager().Remove(ib.Id)
 		return nil
@@ -126,6 +138,13 @@ func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
 }
 
 func (l *Local) UpdateInbound(ctx context.Context, oldIb, newIb *model.Inbound) error {
+	if oldIb.Protocol == model.OpenFlux || oldIb.Protocol == model.WDTT || oldIb.Protocol == model.CSQTT || newIb.Protocol == model.OpenFlux || newIb.Protocol == model.WDTT || newIb.Protocol == model.CSQTT {
+		_ = l.DelInbound(ctx, oldIb)
+		if !newIb.Enable {
+			return nil
+		}
+		return l.AddInbound(ctx, newIb)
+	}
 	if oldIb.Protocol == model.MTProto || newIb.Protocol == model.MTProto {
 		return l.updateMtprotoInbound(ctx, oldIb, newIb)
 	}
@@ -249,7 +268,7 @@ func (l *Local) updateTuicInbound(ctx context.Context, oldIb, newIb *model.Inbou
 }
 
 func (l *Local) AddUser(_ context.Context, ib *model.Inbound, userMap map[string]any) error {
-	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC {
+	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC || ib.Protocol == model.OpenFlux || ib.Protocol == model.WDTT || ib.Protocol == model.CSQTT {
 		return nil
 	}
 	return l.withAPI(func(api *xray.XrayAPI) error {
@@ -258,7 +277,7 @@ func (l *Local) AddUser(_ context.Context, ib *model.Inbound, userMap map[string
 }
 
 func (l *Local) RemoveUser(_ context.Context, ib *model.Inbound, email string) error {
-	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC {
+	if ib.Protocol == model.MTProto || ib.Protocol == model.AmneziaWG || ib.Protocol == model.TUIC || ib.Protocol == model.OpenFlux || ib.Protocol == model.WDTT || ib.Protocol == model.CSQTT {
 		return nil
 	}
 	return l.withAPI(func(api *xray.XrayAPI) error {

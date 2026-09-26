@@ -208,6 +208,87 @@ rollback_release() {
     fi
 }
 
+tunnel_asset_url() {
+    local repo="$1" pattern="$2"
+    curl -fsSL -H 'Accept: application/vnd.github+json' -H 'User-Agent: 3x-ui-tunnels' \
+        "https://api.github.com/repos/${repo}/releases/latest" \
+        | grep -oE '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
+        | cut -d '"' -f 4 \
+        | grep -E "$pattern" \
+        | head -n 1
+}
+
+install_tunnel_binary() {
+    local kind="$1" machine arch openflux_arch url tmpdir asset
+    machine="$(uname -m)"
+    case "$machine" in
+        x86_64 | amd64) arch="amd64" ;;
+        aarch64 | arm64) arch="arm64" ;;
+        armv7l | armv7 | armhf) arch="armv7" ;;
+        *) LOGE "Unsupported architecture for tunnel sidecars: ${machine}"; return 1 ;;
+    esac
+    openflux_arch="$arch"
+    [[ "$arch" == "armv7" ]] && openflux_arch="arm"
+    tmpdir="$(mktemp -d)" || return 1
+    install -d -m 0755 "${xui_folder}/bin" || { rm -rf "$tmpdir"; return 1; }
+
+    case "$kind" in
+        openflux)
+            url="$(tunnel_asset_url 'p1neappleXpress/OpenFlux' "openflux-linux-${openflux_arch}$")"
+            [[ -n "$url" ]] || { LOGE 'OpenFlux Linux asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
+            curl -fL "$url" -o "$tmpdir/openflux" || { rm -rf "$tmpdir"; return 1; }
+            install -m 0755 "$tmpdir/openflux" "${xui_folder}/bin/openflux-linux-${arch}"
+            ;;
+        wdtt)
+            [[ "$arch" == "amd64" ]] || { LOGE 'WDTT Plus standalone installer currently supports amd64 only.'; rm -rf "$tmpdir"; return 1; }
+            url="$(tunnel_asset_url 'Ivan4537/WDTT-Plus' 'WDTT-Plus-server-.*linux-amd64\.tar\.gz$')"
+            [[ -n "$url" ]] || { LOGE 'WDTT Plus server bundle was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
+            curl -fL "$url" -o "$tmpdir/wdtt.tar.gz" || { rm -rf "$tmpdir"; return 1; }
+            tar -xzf "$tmpdir/wdtt.tar.gz" -C "$tmpdir" || { rm -rf "$tmpdir"; return 1; }
+            asset="$(find "$tmpdir" -type f -name wdtt-server -print -quit)"
+            [[ -n "$asset" ]] || { LOGE 'wdtt-server is missing from the release bundle.'; rm -rf "$tmpdir"; return 1; }
+            install -m 0755 "$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}"
+            ;;
+        csqtt)
+            command -v unzip > /dev/null 2>&1 || {
+                case "$release" in
+                    ubuntu | debian | armbian) apt-get update && apt-get install -y unzip ;;
+                    centos | rhel | almalinux | rocky | ol) yum install -y unzip ;;
+                    alpine) apk add --no-cache unzip ;;
+                    *) LOGE 'Install unzip and retry.'; rm -rf "$tmpdir"; return 1 ;;
+                esac
+            }
+            url="$(tunnel_asset_url 'amurcanov/csqtt' 'universal.*\.apk$')"
+            [[ -n "$url" ]] || url="$(tunnel_asset_url 'amurcanov/csqtt' '\.apk$')"
+            [[ -n "$url" ]] || { LOGE 'CSQTT APK asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
+            curl -fL "$url" -o "$tmpdir/csqtt.apk" || { rm -rf "$tmpdir"; return 1; }
+            unzip -p "$tmpdir/csqtt.apk" "assets/csqtt-linux-${arch}" > "$tmpdir/csqtt" || { rm -rf "$tmpdir"; return 1; }
+            [[ -s "$tmpdir/csqtt" ]] || { LOGE 'CSQTT server asset is missing from the APK.'; rm -rf "$tmpdir"; return 1; }
+            install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/csqtt-linux-${arch}"
+            ;;
+        *) LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'; rm -rf "$tmpdir"; return 1 ;;
+    esac
+    rm -rf "$tmpdir"
+    LOGI "${kind} server binary installed."
+}
+
+tunnels_command() {
+    local action="$1" kind="${2:-all}" failed=0 installed=0
+    [[ "$action" == "install" || "$action" == "update" ]] || {
+        LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'
+        return 1
+    }
+    if [[ "$kind" == "all" ]]; then
+        for item in openflux wdtt csqtt; do
+            if install_tunnel_binary "$item"; then installed=1; else failed=1; fi
+        done
+    else
+        if install_tunnel_binary "$kind"; then installed=1; else failed=1; fi
+    fi
+    [[ "$installed" -eq 1 ]] && restart 0
+    return "$failed"
+}
+
 replace_xui_script() {
     local url="$1"
     local use_if_modified_since="$2"
@@ -3447,6 +3528,7 @@ show_usage() {
 │  ${blue}x-ui update${plain}                - Update                           │
 │  ${blue}x-ui update-dev${plain}            - Update to Dev channel (latest)   │
 │  ${blue}x-ui rollback TAG${plain}           - Roll back to a fork release      │
+│  ${blue}x-ui tunnels install all${plain}     - Install/update tunnel servers    │
 │  ${blue}x-ui update-all-geofiles${plain}   - Update all geo files             │
 │  ${blue}x-ui migrateDB [file]${plain}      - Convert .db <-> .dump (SQLite)   │
 │  ${blue}x-ui pgclient [ver]${plain}        - Upgrade pg_dump/pg_restore tools │
@@ -3637,6 +3719,9 @@ if [[ $# > 0 ]]; then
             ;;
         "rollback")
             check_install 0 && rollback_release "$2"
+            ;;
+        "tunnels")
+            check_install 0 && tunnels_command "$2" "$3"
             ;;
         "legacy")
             check_install 0 && legacy_version 0
