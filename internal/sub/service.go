@@ -2992,8 +2992,8 @@ type PageData struct {
 	Emails        []string
 }
 
-// ResolveRequest extracts scheme and host info from request/headers consistently.
 // ResolveRequest extracts scheme, host, and header information from an HTTP request.
+// X-Real-IP names the visitor, never the panel, so it is no host source (#6589).
 func (s *SubService) ResolveRequest(c *gin.Context) (scheme string, host string, hostWithPort string, hostHeader string) {
 	trusted := s.forwardedHeadersTrusted(c)
 	if !trusted {
@@ -3012,12 +3012,9 @@ func (s *SubService) ResolveRequest(c *gin.Context) (scheme string, host string,
 		scheme = "https"
 	}
 
-	// base host (no port)
+	// base host (no port): trusted X-Forwarded-Host, then the dialed request Host.
 	if h, err := getHostFromXFH(forwarded("X-Forwarded-Host")); err == nil && h != "" {
 		host = h
-	}
-	if host == "" {
-		host = forwarded("X-Real-IP")
 	}
 	if host == "" {
 		var err error
@@ -3038,9 +3035,6 @@ func (s *SubService) ResolveRequest(c *gin.Context) (scheme string, host string,
 
 	// header display host
 	hostHeader = forwarded("X-Forwarded-Host")
-	if hostHeader == "" {
-		hostHeader = forwarded("X-Real-IP")
-	}
 	if hostHeader == "" {
 		hostHeader = host
 	}
