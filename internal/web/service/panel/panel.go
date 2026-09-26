@@ -40,7 +40,8 @@ type PanelUpdateInfo struct {
 }
 
 const (
-	panelUpdaterURL      = "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/update.sh"
+	panelUpdaterURL      = "https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh"
+	panelReleaseTagFile  = "/etc/x-ui/release-tag"
 	maxPanelUpdaterBytes = 2 << 20
 	// devReleaseTag is the fixed-tag rolling pre-release the CI force-moves to the
 	// newest main commit; the dev update channel installs from it.
@@ -125,24 +126,48 @@ func (s *PanelService) RestartPanel(delay time.Duration) error {
 	return nil
 }
 
-// GetUpdateInfo checks GitHub for the latest 3x-ui release. When the dev channel
-// is enabled on a dev build it compares commits against the rolling dev release;
-// otherwise it compares versions against the latest stable tag.
+// GetUpdateInfo checks this fork's release, not upstream 3x-ui. The base
+// binary reports only 3.8.5, so the install/update scripts persist the full
+// fork tag separately for accurate patch-release comparisons.
 func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
-	if devChannelActive() {
-		return getDevUpdateInfo()
-	}
 	latest, err := fetchLatestPanelVersion()
 	if err != nil {
 		return nil, err
 	}
-	current := config.GetBaseVersion()
+	if !validForkReleaseTag(latest) {
+		return nil, fmt.Errorf("unexpected fork release tag %q", latest)
+	}
+	current := installedForkReleaseTag()
+	available := true // Older fork installs have no tag marker; offer the safe pinned update.
+	if current != "" {
+		available = isNewerVersion(latest, current)
+	} else {
+		current = config.GetBaseVersion() + " (fork tag unknown)"
+	}
 	return &PanelUpdateInfo{
-		Channel:         "stable",
+		Channel:         "fork",
 		CurrentVersion:  current,
 		LatestVersion:   latest,
-		UpdateAvailable: isNewerVersion(latest, current),
+		UpdateAvailable: available,
 	}, nil
+}
+
+func installedForkReleaseTag() string {
+	raw, err := os.ReadFile(panelReleaseTagFile)
+	if err != nil {
+		return ""
+	}
+	tag := strings.TrimSpace(string(raw))
+	if validForkReleaseTag(tag) {
+		return tag
+	}
+	return ""
+}
+
+var forkReleaseTagRegex = regexp.MustCompile(`^fork-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$`)
+
+func validForkReleaseTag(tag string) bool {
+	return forkReleaseTagRegex.MatchString(tag)
 }
 
 // devChannelActive reports whether self-update should track the rolling dev
@@ -181,13 +206,16 @@ func getDevUpdateInfo() (*PanelUpdateInfo, error) {
 // setting. Returns the run ID to pass to GetUpdateStatus so the caller can
 // tell this run's result apart from a stale one.
 func (s *PanelService) StartUpdate() (int64, error) {
-	return s.startUpdate(devChannelActive())
+	return s.startUpdate(false)
 }
 
 // StartUpdateChannel runs the updater against an explicitly chosen channel,
 // overriding the local dev-channel setting. Used by the master node updater so
 // a node can be moved to the dev channel from the central panel.
 func (s *PanelService) StartUpdateChannel(dev bool) (int64, error) {
+	if dev {
+		return 0, fmt.Errorf("this fork updates from stable fork releases only")
+	}
 	return s.startUpdate(dev)
 }
 
@@ -241,9 +269,15 @@ func (s *PanelService) startUpdate(useDev bool) (int64, error) {
 	statusFile := config.GetUpdateStatusFilePath()
 
 	mainFolder, serviceFolder := resolveUpdateFolders()
-	updateTag := ""
 	if useDev {
-		updateTag = devReleaseTag
+		return 0, fmt.Errorf("this fork updates from stable fork releases only")
+	}
+	updateTag, err := fetchLatestPanelVersion()
+	if err != nil {
+		return 0, err
+	}
+	if !validForkReleaseTag(updateTag) {
+		return 0, fmt.Errorf("unexpected fork release tag %q", updateTag)
 	}
 	updateScript := fmt.Sprintf("set -e; trap 'rm -f %s' EXIT; %s %s", shellQuote(scriptPath), shellQuote(bash), shellQuote(scriptPath))
 	runIDEnv := "XUI_UPDATE_RUN_ID=" + strconv.FormatInt(runID, 10)
@@ -418,21 +452,38 @@ func downloadPanelUpdater() (string, error) {
 
 func fetchLatestPanelVersion() (string, error) {
 	release, err := fetchPanelRelease("")
-	if err != nil {
-		return "", err
+	if err == nil && release.TagName != "" {
+		return release.TagName, nil
 	}
-	if release.TagName == "" {
-		return "", fmt.Errorf("latest panel release tag is empty")
+	// GitHub's API can be rate-limited while its releases/latest redirect still
+	// works. Use that redirect as a read-only fallback, then validate the tag.
+	client := (&service.SettingService{}).NewProxiedHTTPClient(10 * time.Second)
+	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodHead,
+		"https://github.com/vnenapravo7-source/3x-ui-tunnels/releases/latest", nil)
+	if reqErr != nil {
+		return "", reqErr
 	}
-	return release.TagName, nil
+	resp, fallbackErr := client.Do(req)
+	if fallbackErr != nil {
+		return "", fmt.Errorf("GitHub release API: %v; redirect fallback: %w", err, fallbackErr)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub release redirect returned HTTP %d", resp.StatusCode)
+	}
+	tag := strings.TrimPrefix(resp.Request.URL.Path, "/vnenapravo7-source/3x-ui-tunnels/releases/tag/")
+	if !validForkReleaseTag(tag) {
+		return "", fmt.Errorf("GitHub release redirect returned an invalid tag %q", tag)
+	}
+	return tag, nil
 }
 
 // fetchPanelRelease fetches a release from GitHub. An empty tag resolves the
 // latest stable release; a non-empty tag (e.g. dev-latest) resolves that tag.
 func fetchPanelRelease(tag string) (*service.Release, error) {
-	url := "https://api.github.com/repos/MHSanaei/3x-ui/releases/latest"
+	url := "https://api.github.com/repos/vnenapravo7-source/3x-ui-tunnels/releases/latest"
 	if tag != "" {
-		url = "https://api.github.com/repos/MHSanaei/3x-ui/releases/tags/" + tag
+		url = "https://api.github.com/repos/vnenapravo7-source/3x-ui-tunnels/releases/tags/" + tag
 	}
 	client := (&service.SettingService{}).NewProxiedHTTPClient(10 * time.Second)
 	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
@@ -522,11 +573,36 @@ func resolveUpdateFolders() (string, string) {
 }
 
 func isNewerVersion(latest string, current string) bool {
+	if a, okA := parseForkVersionParts(latest); okA {
+		if b, okB := parseForkVersionParts(current); okB {
+			for i := range a {
+				if a[i] != b[i] {
+					return a[i] > b[i]
+				}
+			}
+			return false
+		}
+	}
 	cmp, ok := compareVersionStrings(latest, current)
 	if !ok {
 		return normalizeVersionTag(latest) != normalizeVersionTag(current)
 	}
 	return cmp > 0
+}
+
+func parseForkVersionParts(tag string) ([4]int, bool) {
+	var parts [4]int
+	if !validForkReleaseTag(tag) {
+		return parts, false
+	}
+	for i, part := range strings.Split(strings.ReplaceAll(strings.TrimPrefix(tag, "fork-v"), "-", "."), ".") {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return parts, false
+		}
+		parts[i] = value
+	}
+	return parts, true
 }
 
 func compareVersionStrings(a string, b string) (int, bool) {

@@ -1267,6 +1267,8 @@ update_x-ui() {
     # Never fatal.
     setup_fail2ban
 
+    printf '%s\n' "${tag_version}" > /etc/x-ui/release-tag
+    chmod 600 /etc/x-ui/release-tag
     echo -e "${green}x-ui ${tag_version}${plain} updating finished, it is running now..."
     echo -e ""
     echo -e "┌───────────────────────────────────────────────────────┐

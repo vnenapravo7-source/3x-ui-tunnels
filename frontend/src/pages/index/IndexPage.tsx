@@ -93,9 +93,14 @@ export default function IndexPage() {
   }, []);
 
   const displayVersion = useMemo(
-    () => window.X_UI_CUR_VER || panelUpdateInfo.currentVersion || '?',
-    [panelUpdateInfo.currentVersion],
+    () => (panelUpdateInfo.channel === 'fork' ? panelUpdateInfo.currentVersion : window.X_UI_CUR_VER || panelUpdateInfo.currentVersion) || '?',
+    [panelUpdateInfo.channel, panelUpdateInfo.currentVersion],
   );
+
+  async function checkForkRelease() {
+    const msg = await HttpUtil.get<PanelUpdateInfo>('/panel/api/server/getPanelUpdateInfo');
+    if (msg?.success && msg.obj) setPanelUpdateInfo(msg.obj);
+  }
 
   const setBusy = useCallback(({ busy, tip }: { busy: boolean; tip?: string }) => {
     setLoading(busy);
@@ -304,6 +309,7 @@ export default function IndexPage() {
           <PanelUpdateModal
             open={panelUpdateOpen}
             info={panelUpdateInfo}
+            onCheck={checkForkRelease}
             devChannelEnable={devChannelEnable}
             onChannelChange={handleChannelChange}
             onClose={() => setPanelUpdateOpen(false)}

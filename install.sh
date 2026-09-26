@@ -1829,6 +1829,8 @@ install_x-ui() {
     # works out of the box (no-op when XUI_ENABLE_FAIL2BAN=false). Never fatal.
     setup_fail2ban
 
+    printf '%s\n' "${tag_version}" > /etc/x-ui/release-tag
+    chmod 600 /etc/x-ui/release-tag
     echo -e "${green}x-ui ${tag_version}${plain} installation finished, it is running now..."
     echo -e ""
     echo -e "┌───────────────────────────────────────────────────────┐

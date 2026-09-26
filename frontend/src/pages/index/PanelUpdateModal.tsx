@@ -27,6 +27,7 @@ interface BusyEvent {
 interface PanelUpdateModalProps {
   open: boolean;
   info: PanelUpdateInfo;
+  onCheck?: () => Promise<void>;
   devChannelEnable?: boolean;
   onChannelChange?: (dev: boolean) => void | Promise<void>;
   onClose: () => void;
@@ -36,6 +37,7 @@ interface PanelUpdateModalProps {
 export default function PanelUpdateModal({
   open,
   info,
+  onCheck,
   devChannelEnable,
   onChannelChange,
   onClose,
@@ -44,8 +46,20 @@ export default function PanelUpdateModal({
   const { t } = useTranslation();
   const [modal, contextHolder] = Modal.useModal();
   const [channelBusy, setChannelBusy] = useState(false);
+  const [checkBusy, setCheckBusy] = useState(false);
 
   const isDev = info.channel === 'dev';
+  const isFork = info.channel === 'fork';
+
+  async function checkRelease() {
+    if (!onCheck) return;
+    setCheckBusy(true);
+    try {
+      await onCheck();
+    } finally {
+      setCheckBusy(false);
+    }
+  }
 
   async function pollUpdateStatus(expectedRunId: string): Promise<UpdateOutcome> {
     await PromiseUtil.sleep(5000);
@@ -137,14 +151,18 @@ export default function PanelUpdateModal({
           />
         )}
 
-        <div className="version-list">
-          <div className="version-list-item">
-            <span>{t('pages.index.devChannel')}</span>
-            <Switch checked={!!devChannelEnable} loading={channelBusy} onChange={handleChannel} />
+        {isFork ? (
+          <Alert type="info" className="mb-12" title="Обновления из vnenapravo7-source/3x-ui-tunnels" showIcon />
+        ) : (
+          <div className="version-list">
+            <div className="version-list-item">
+              <span>{t('pages.index.devChannel')}</span>
+              <Switch checked={!!devChannelEnable} loading={channelBusy} onChange={handleChannel} />
+            </div>
           </div>
-        </div>
+        )}
 
-        {devChannelEnable && (
+        {!isFork && devChannelEnable && (
           <Alert
             type="info"
             className="mb-12"
@@ -162,7 +180,7 @@ export default function PanelUpdateModal({
               <Tag color="green">{info.currentCommit || '?'}</Tag>
             ) : (
               <Tag color="green">
-                {formatPanelVersion(window.X_UI_CUR_VER || info.currentVersion) || '?'}
+                {(isFork ? info.currentVersion : formatPanelVersion(window.X_UI_CUR_VER || info.currentVersion)) || '?'}
               </Tag>
             )}
           </div>
@@ -182,6 +200,11 @@ export default function PanelUpdateModal({
         </div>
 
         <div className="actions-row">
+          {isFork && (
+            <Button loading={checkBusy} onClick={() => void checkRelease()}>
+              Проверить релиз
+            </Button>
+          )}
           <Button
             type="primary"
             disabled={!info.updateAvailable}
