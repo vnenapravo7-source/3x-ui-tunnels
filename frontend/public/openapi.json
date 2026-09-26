@@ -3301,6 +3301,14 @@
             ],
             "type": "string"
           },
+          "trafficMultiplier": {
+            "description": "TrafficMultiplier scales billed traffic for this node in hundredths:\n100 = 1x, 150 = 1.5x, 200 = 2x. Only per-sync deltas are multiplied,\nnever historical totals. Valid range is 100-10000 (sub-1x is not\nsupported); default 100 (1x).",
+            "example": 100,
+            "format": "int64",
+            "maximum": 10000,
+            "minimum": 100,
+            "type": "integer"
+          },
           "transitive": {
             "type": "boolean"
           },
@@ -3360,6 +3368,7 @@
           "scheme",
           "status",
           "tlsVerifyMode",
+          "trafficMultiplier",
           "updatedAt",
           "uptimeSecs",
           "xrayError",
@@ -3438,6 +3447,14 @@
               "mtls"
             ],
             "type": "string"
+          },
+          "trafficMultiplier": {
+            "description": "TrafficMultiplier is optional input in hundredths (100 = 1x). nil means\n\"default 100 on create / keep stored value on update\"; an explicit value\noutside 100-10000 is rejected by validation (sub-1x is not supported).",
+            "format": "int64",
+            "maximum": 10000,
+            "minimum": 100,
+            "nullable": true,
+            "type": "integer"
           }
         },
         "required": [
@@ -3608,6 +3625,11 @@
             "example": "verify",
             "type": "string"
           },
+          "trafficMultiplier": {
+            "example": 100,
+            "format": "int64",
+            "type": "integer"
+          },
           "transitive": {
             "example": false,
             "type": "boolean"
@@ -3669,6 +3691,7 @@
           "scheme",
           "status",
           "tlsVerifyMode",
+          "trafficMultiplier",
           "updatedAt",
           "uptimeSecs",
           "xrayError",
@@ -10510,6 +10533,7 @@
                       "scheme": "https",
                       "status": "online",
                       "tlsVerifyMode": "verify",
+                      "trafficMultiplier": 100,
                       "transitive": false,
                       "updatedAt": 1700003600,
                       "uptimeSecs": 86400,
@@ -10711,6 +10735,7 @@
                     "scheme": "https",
                     "status": "online",
                     "tlsVerifyMode": "verify",
+                    "trafficMultiplier": 100,
                     "transitive": false,
                     "updatedAt": 1700003600,
                     "uptimeSecs": 86400,
@@ -10778,7 +10803,7 @@
         "tags": [
           "Nodes"
         ],
-        "summary": "Register a new remote node. Provide its URL, write-only apiToken, and optional remark / allowPrivateAddress flag. Responses expose hasApiToken only.",
+        "summary": "Register a new remote node. Provide its URL, write-only apiToken, and optional remark / allowPrivateAddress flag. trafficMultiplier (hundredths, 100 = 1x) is optional and defaults to 100. Responses expose hasApiToken only.",
         "operationId": "post_panel_api_nodes_add",
         "requestBody": {
           "required": true,
@@ -10797,7 +10822,8 @@
                 "apiToken": "abcdef...",
                 "clearApiToken": false,
                 "enable": true,
-                "allowPrivateAddress": false
+                "allowPrivateAddress": false,
+                "trafficMultiplier": 150
               }
             }
           }
@@ -10861,6 +10887,7 @@
                     "scheme": "https",
                     "status": "online",
                     "tlsVerifyMode": "verify",
+                    "trafficMultiplier": 100,
                     "transitive": false,
                     "updatedAt": 1700003600,
                     "uptimeSecs": 86400,
@@ -10910,7 +10937,8 @@
                 "apiToken": "",
                 "clearApiToken": false,
                 "enable": true,
-                "allowPrivateAddress": false
+                "allowPrivateAddress": false,
+                "trafficMultiplier": 150
               }
             }
           }
@@ -15893,6 +15921,7 @@
                   "scheme": "https",
                   "status": "online",
                   "tlsVerifyMode": "verify",
+                  "trafficMultiplier": 100,
                   "transitive": false,
                   "updatedAt": 1700003600,
                   "uptimeSecs": 86400,
