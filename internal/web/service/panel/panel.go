@@ -41,6 +41,7 @@ const (
 	panelUpdaterURL      = "https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh"
 	panelReleaseTagFile  = "/etc/x-ui/release-tag"
 	maxPanelUpdaterBytes = 2 << 20
+
 	updateStatePending = "pending"
 	updateStateSuccess = "success"
 	updateStateFailed  = "failed"
