@@ -93,7 +93,10 @@ export default function IndexPage() {
   }, []);
 
   const displayVersion = useMemo(
-    () => (panelUpdateInfo.channel === 'fork' ? panelUpdateInfo.currentVersion : window.X_UI_CUR_VER || panelUpdateInfo.currentVersion) || '?',
+    () =>
+      (panelUpdateInfo.channel === 'fork'
+        ? panelUpdateInfo.currentVersion
+        : window.X_UI_CUR_VER || panelUpdateInfo.currentVersion) || '?',
     [panelUpdateInfo.channel, panelUpdateInfo.currentVersion],
   );
 

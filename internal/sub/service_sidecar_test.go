@@ -26,7 +26,7 @@ func TestGetSubsIncludesManagedSidecarLinks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		email := string(tc.protocol) + "@example.com"
-		inbound := &model.Inbound{Listen: "203.0.113.8", Port: tc.port, Protocol: tc.protocol, Enable: true, Settings: tc.settings}
+		inbound := &model.Inbound{Tag: string(tc.protocol) + "-sidecar-test", Listen: "203.0.113.8", Port: tc.port, Protocol: tc.protocol, Enable: true, Settings: tc.settings}
 		if err := db.Create(inbound).Error; err != nil {
 			t.Fatalf("create %s inbound: %v", tc.protocol, err)
 		}

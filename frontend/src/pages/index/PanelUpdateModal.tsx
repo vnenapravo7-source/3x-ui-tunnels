@@ -152,7 +152,12 @@ export default function PanelUpdateModal({
         )}
 
         {isFork ? (
-          <Alert type="info" className="mb-12" title="Обновления из vnenapravo7-source/3x-ui-tunnels" showIcon />
+          <Alert
+            type="info"
+            className="mb-12"
+            title="Обновления из vnenapravo7-source/3x-ui-tunnels"
+            showIcon
+          />
         ) : (
           <div className="version-list">
             <div className="version-list-item">
@@ -180,7 +185,9 @@ export default function PanelUpdateModal({
               <Tag color="green">{info.currentCommit || '?'}</Tag>
             ) : (
               <Tag color="green">
-                {(isFork ? info.currentVersion : formatPanelVersion(window.X_UI_CUR_VER || info.currentVersion)) || '?'}
+                {(isFork
+                  ? info.currentVersion
+                  : formatPanelVersion(window.X_UI_CUR_VER || info.currentVersion)) || '?'}
               </Tag>
             )}
           </div>
