@@ -2731,7 +2731,10 @@ export const SCHEMAS: Record<string, unknown> = {
           "tun",
           "mtproto",
           "amneziawg",
-          "tuic"
+          "tuic",
+          "openflux",
+          "wdtt",
+          "csqtt"
         ],
         "example": "vless",
         "type": "string"

@@ -233,12 +233,14 @@ func prepareCSQTT(inst Instance) error {
 		return err
 	}
 	defer db.Close()
-	tx, err := db.Begin()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	if _, err := tx.Exec("INSERT INTO meta(key,value) VALUES('main_password',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", inst.Settings.Clients[0].Password); err != nil {
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "INSERT INTO meta(key,value) VALUES('main_password',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", inst.Settings.Clients[0].Password); err != nil {
 		return err
 	}
 	wanted := make([]string, 0, len(inst.Settings.Clients))
@@ -248,7 +250,7 @@ func prepareCSQTT(inst Instance) error {
 		if client.ExpiryTime > 0 {
 			expires = client.ExpiryTime / 1000
 		}
-		_, err = tx.Exec(`INSERT INTO passwords(password,expires_at,name,vk_hashes,dtls_port,wg_port,local_port)
+		_, err = tx.ExecContext(ctx, `INSERT INTO passwords(password,expires_at,name,vk_hashes,dtls_port,wg_port,local_port)
 			VALUES(?,?,?,?,?,?,?) ON CONFLICT(password) DO UPDATE SET expires_at=excluded.expires_at,name=excluded.name,
 			vk_hashes=excluded.vk_hashes,dtls_port=excluded.dtls_port,wg_port=excluded.wg_port,local_port=excluded.local_port`,
 			client.Password, expires, client.Email, strings.Join(inst.Settings.Hashes, ","), inst.Port, inst.Settings.WGPort, inst.Settings.LocalPort)
@@ -262,7 +264,7 @@ func prepareCSQTT(inst Instance) error {
 		for i := range wanted {
 			args[i] = wanted[i]
 		}
-		if _, err := tx.Exec("DELETE FROM passwords WHERE password NOT IN ("+marks+")", args...); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM passwords WHERE password NOT IN ("+marks+")", args...); err != nil {
 			return err
 		}
 	}
@@ -293,13 +295,13 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		if err := prepareWDTT(inst); err != nil {
 			return nil, err
 		}
-		return exec.Command(bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--wg-port", strconv.Itoa(inst.Settings.WGPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
+		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--wg-port", strconv.Itoa(inst.Settings.WGPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
 	case model.CSQTT:
 		if err := prepareCSQTT(inst); err != nil {
 			return nil, err
 		}
 		webPort := 48000 + inst.ID%10000
-		return exec.Command(bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--web-port", strconv.Itoa(webPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
+		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--web-port", strconv.Itoa(webPort), "--config-dir", dir, "--password", inst.Settings.Clients[0].Password), nil
 	case model.OpenFlux:
 		if len(inst.Settings.Clients) != 1 {
 			return nil, errors.New("OpenFlux inbound requires exactly one client")
@@ -358,7 +360,7 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 			return nil, errors.New("OpenFlux requires at least one transport")
 		}
 		args = append(args, "--cookie-store="+filepath.Join(dir, "cookies.json"))
-		return exec.Command(bin, args...), nil
+		return exec.CommandContext(context.Background(), bin, args...), nil
 	default:
 		return nil, fmt.Errorf("unsupported sidecar protocol %s", inst.Protocol)
 	}

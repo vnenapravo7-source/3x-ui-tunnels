@@ -2757,7 +2757,10 @@
               "tun",
               "mtproto",
               "amneziawg",
-              "tuic"
+              "tuic",
+              "openflux",
+              "wdtt",
+              "csqtt"
             ],
             "example": "vless",
             "type": "string"
