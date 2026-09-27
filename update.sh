@@ -1267,6 +1267,28 @@ update_x-ui() {
     # Never fatal.
     setup_fail2ban
 
+    # CSQTT is force-migrated to the pinned multi-instance build. Existing
+    # OpenFlux and WDTT binaries stay untouched so imported client links cannot
+    # be invalidated by an independent wire-protocol change.
+    if ! /usr/bin/x-ui tunnels update csqtt; then
+        echo -e "${yellow}CSQTT could not be updated automatically.${plain}"
+        echo -e "${yellow}Run 'x-ui tunnels status' and retry with 'x-ui tunnels update csqtt'.${plain}"
+    fi
+
+    case "$(uname -m)" in
+        x86_64 | amd64) tunnel_arch="amd64" ;;
+        aarch64 | arm64) tunnel_arch="arm64" ;;
+        armv7l | armv7 | armhf) tunnel_arch="armv7" ;;
+        *) tunnel_arch="$(uname -m)" ;;
+    esac
+    if [[ ! -x "${xui_folder}/bin/openflux-linux-${tunnel_arch}" ]]; then
+        /usr/bin/x-ui tunnels install openflux || echo -e "${yellow}OpenFlux is not installed; retry with 'x-ui tunnels install openflux'.${plain}"
+    fi
+    if [[ "${tunnel_arch}" == "amd64" && ! -x "${xui_folder}/bin/wdtt-server-linux-amd64" ]]; then
+        /usr/bin/x-ui tunnels install wdtt || echo -e "${yellow}WDTT is not installed; retry with 'x-ui tunnels install wdtt'.${plain}"
+    fi
+    /usr/bin/x-ui tunnels status || true
+
     printf '%s\n' "${tag_version}" > /etc/x-ui/release-tag
     chmod 600 /etc/x-ui/release-tag
     echo -e "${green}x-ui ${tag_version}${plain} updating finished, it is running now..."
