@@ -1,7 +1,9 @@
 package sidecartunnel
 
 import (
+	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,71 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 )
+
+func TestPrepareCSQTTSyncsEveryClientCredential(t *testing.T) {
+	t.Setenv("XUI_BIN_FOLDER", t.TempDir())
+	enabled := true
+	inst := Instance{
+		ID:       41,
+		Protocol: model.CSQTT,
+		Port:     54789,
+		Settings: Settings{Clients: []Client{
+			{Email: "alice", Password: "alice-secret", Enable: &enabled},
+			{Email: "bob", Password: "bob-secret", Enable: &enabled},
+		}},
+	}
+
+	// A fresh server is bootstrapped through passwords.json.
+	if err := prepareCSQTT(inst); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(stateDir(inst), "passwords.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy struct {
+		MainPassword string                    `json:"main_password"`
+		Passwords    map[string]map[string]any `json:"passwords"`
+	}
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.MainPassword != "alice-secret" || len(legacy.Passwords) != 2 || legacy.Passwords["bob-secret"]["name"] != "bob" {
+		t.Fatalf("fresh CSQTT credentials were not kept per client: %#v", legacy)
+	}
+
+	// Once CSQTT has migrated to SQLite, reconciliation must retain the same
+	// one-password-per-panel-client relationship.
+	dbPath := filepath.Join(stateDir(inst), "csqtt.db")
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
+		CREATE TABLE passwords(password TEXT PRIMARY KEY, expires_at INTEGER, name TEXT, vk_hashes TEXT,
+			dtls_port INTEGER, wg_port INTEGER, local_port INTEGER);`); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareCSQTT(inst); err != nil {
+		t.Fatal(err)
+	}
+	db, err = sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM passwords WHERE password IN (?, ?)", "alice-secret", "bob-secret").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("SQLite contains %d panel client credentials, want 2", count)
+	}
+}
 
 func TestFingerprintIgnoresGeneratedCupsCode(t *testing.T) {
 	inst := Instance{

@@ -306,7 +306,7 @@ install_tunnel_binary() {
 tunnels_command() {
     local action="$1" kind="${2:-all}" failed=0 installed=0
     if [[ "$action" == "status" ]]; then
-        local item binary count status_arch proc_path process_exe
+        local item binary count status_arch proc_path process_exe csqtt_hash expected_csqtt_hash
         case "$(uname -m)" in
             x86_64 | amd64) status_arch=amd64 ;;
             aarch64 | arm64) status_arch=arm64 ;;
@@ -330,6 +330,19 @@ tunnels_command() {
                 printf '%s: server binary missing\n' "$item"
             fi
         done
+        case "$status_arch" in
+            amd64) expected_csqtt_hash='217623e942adece338827c88d105d5f466afaeb49cb4a35c7716ef23ef1767fa' ;;
+            arm64) expected_csqtt_hash='120b77fc5e4e3e1fcf2f80b71e6d3375baf31d12f5153b6adf877ca18011eb0a' ;;
+            *) expected_csqtt_hash='' ;;
+        esac
+        if [[ -n "$expected_csqtt_hash" && -x "${xui_folder}/bin/csqtt-linux-${status_arch}" ]]; then
+            csqtt_hash="$(sha256sum "${xui_folder}/bin/csqtt-linux-${status_arch}" | awk '{print $1}')"
+            if [[ "$csqtt_hash" == "$expected_csqtt_hash" ]]; then
+                printf 'CSQTT: multi-instance patched binary verified\n'
+            else
+                printf 'CSQTT: old or modified binary; run x-ui tunnels update csqtt\n'
+            fi
+        fi
         for item in ip iptables sysctl; do
             if command -v "$item" >/dev/null 2>&1; then
                 printf '%s: available\n' "$item"

@@ -1088,6 +1088,24 @@ func (s *InboundService) normalizeMtprotoXrayPort(inbound *model.Inbound, oldSet
 	return nil
 }
 
+func ensureSingleCSQTTInboundTx(tx *gorm.DB, inbound *model.Inbound, ignoreID int) error {
+	if inbound == nil || inbound.Protocol != model.CSQTT {
+		return nil
+	}
+	query := tx.Model(&model.Inbound{}).Where("protocol = ?", model.CSQTT)
+	if ignoreID > 0 {
+		query = query.Where("id <> ?", ignoreID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return common.NewError("Only one CSQTT inbound can exist; add clients to the existing CSQTT inbound")
+	}
+	return nil
+}
+
 // AddInbound creates a new inbound configuration.
 // It validates port uniqueness, client email uniqueness, and required fields,
 // then saves the inbound to the database and optionally adds it to the running Xray instance.
@@ -1254,6 +1272,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	needRestart := false
 	var postCommitApply func()
 	err = runSerializedTx(func(tx *gorm.DB) error {
+		if err := ensureSingleCSQTTInboundTx(tx, inbound, 0); err != nil {
+			return err
+		}
 		conflict, cErr := checkPortConflictTx(tx, inbound, 0)
 		if cErr != nil {
 			return cErr
@@ -1786,6 +1807,9 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	var postCommitApply func()
 
 	txErr := runSerializedTx(func(tx *gorm.DB) error {
+		if err := ensureSingleCSQTTInboundTx(tx, inbound, inbound.Id); err != nil {
+			return err
+		}
 		conflict, cErr := checkPortConflictTx(tx, inbound, inbound.Id)
 		if cErr != nil {
 			return cErr

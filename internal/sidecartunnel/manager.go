@@ -325,10 +325,11 @@ func prepareCSQTTNetwork(port int) error {
 	}
 	// The pinned, patched CSQTT build uses a separate interface and subnet so
 	// an existing SWG-CSQTT on csqtt1 can remain untouched.
-	if exec.Command("ip", "link", "show", "dev", csqttInterface).Run() == nil {
+	ctx := context.Background()
+	if exec.CommandContext(ctx, "ip", "link", "show", "dev", csqttInterface).Run() == nil {
 		return fmt.Errorf("CSQTT cannot start: TUN %s is already present; identify its owner before removing anything", csqttInterface)
 	}
-	if output, err := exec.Command("ip", "-4", "route", "show", csqttSubnet).Output(); err == nil && strings.TrimSpace(string(output)) != "" {
+	if output, err := exec.CommandContext(ctx, "ip", "-4", "route", "show", csqttSubnet).Output(); err == nil && strings.TrimSpace(string(output)) != "" {
 		return fmt.Errorf("CSQTT cannot start: subnet %s already has a route", csqttSubnet)
 	}
 	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0o644); err != nil {
@@ -622,7 +623,14 @@ func (m *Manager) persistCupsCode(proc *managed, code string) {
 	if err == nil {
 		_ = database.GetDB().Model(&model.Inbound{}).Where("id = ?", proc.instance.ID).UpdateColumn("settings", string(raw)).Error
 	}
-	if firstRoom && len(proc.instance.Settings.Transports) == 1 && proc.instance.Settings.Transports[0].Type == "cupsonline" {
+	hasCups := false
+	for _, transport := range proc.instance.Settings.Transports {
+		if transport.Type == "cupsonline" {
+			hasCups = true
+			break
+		}
+	}
+	if firstRoom && hasCups {
 		go func() {
 			time.Sleep(time.Second)
 			m.mu.Lock()

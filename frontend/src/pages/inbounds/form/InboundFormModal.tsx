@@ -253,6 +253,18 @@ export default function InboundFormModal({
 
   const selectableNodes = (availableNodes || []).filter((n) => n.enable);
   const protocol = (useWatch({ control, name: 'protocol' }) ?? '') as string;
+  const csqttAlreadyExists = dbInbounds.some(
+    (candidate) => candidate.protocol === Protocols.CSQTT && candidate.id !== dbInbound?.id,
+  );
+  const protocolOptions = PROTOCOL_OPTIONS.map((option) =>
+    option.value === Protocols.CSQTT && csqttAlreadyExists
+      ? {
+          ...option,
+          disabled: true,
+          label: 'csqtt — already exists; add clients to it',
+        }
+      : option,
+  );
   const isNodeEligible = !!NODE_ELIGIBLE_PROTOCOLS[protocol];
   /*
    * The `node` share-address strategy only means something when the inbound can
@@ -648,7 +660,7 @@ export default function InboundFormModal({
       )}
 
       <FormField name="protocol" label={t('pages.inbounds.protocol')}>
-        <Select id="protocol" disabled={mode === 'edit'} options={PROTOCOL_OPTIONS} />
+        <Select id="protocol" disabled={mode === 'edit'} options={protocolOptions} />
       </FormField>
 
       <FormField
