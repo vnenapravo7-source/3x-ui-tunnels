@@ -1506,6 +1506,10 @@ require_repo_files() {
 }
 
 install_x-ui() {
+    had_existing_xui=0
+    if [[ -x "${xui_folder}/x-ui" || -f /etc/x-ui/x-ui.db ]]; then
+        had_existing_xui=1
+    fi
     cd ${xui_folder%/x-ui}/
 
     # Download resources
@@ -1828,6 +1832,29 @@ install_x-ui() {
     # IP Limit relies on fail2ban; install + configure it now so the feature
     # works out of the box (no-op when XUI_ENABLE_FAIL2BAN=false). Never fatal.
     setup_fail2ban
+
+    # A fresh installation gets every supported sidecar. Reinstalling over an
+    # existing panel preserves working OpenFlux/WDTT binaries so imported links
+    # keep the same wire protocol; only CSQTT is migrated to the pinned build.
+    if [[ "${had_existing_xui}" -eq 0 ]]; then
+        if ! /usr/bin/x-ui tunnels update all; then
+            echo -e "${yellow}Some optional tunnel components could not be installed on this architecture.${plain}"
+            echo -e "${yellow}Run 'x-ui tunnels status' and retry with 'x-ui tunnels update all'.${plain}"
+        fi
+    else
+        /usr/bin/x-ui tunnels update csqtt || echo -e "${yellow}CSQTT automatic migration failed; run 'x-ui tunnels update csqtt'.${plain}"
+        case "$(uname -m)" in
+            x86_64 | amd64) tunnel_arch="amd64" ;;
+            aarch64 | arm64) tunnel_arch="arm64" ;;
+            armv7l | armv7 | armhf) tunnel_arch="armv7" ;;
+            *) tunnel_arch="$(uname -m)" ;;
+        esac
+        [[ -x "${xui_folder}/bin/openflux-linux-${tunnel_arch}" ]] || /usr/bin/x-ui tunnels install openflux || true
+        if [[ "${tunnel_arch}" == "amd64" && ! -x "${xui_folder}/bin/wdtt-server-linux-amd64" ]]; then
+            /usr/bin/x-ui tunnels install wdtt || true
+        fi
+    fi
+    /usr/bin/x-ui tunnels status || true
 
     printf '%s\n' "${tag_version}" > /etc/x-ui/release-tag
     chmod 600 /etc/x-ui/release-tag
