@@ -1,12 +1,37 @@
 package sub
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 )
+
+func TestCSQTTShareLinksUseEachPanelClientPassword(t *testing.T) {
+	svc := NewSubService("")
+	svc.address = "vpn.example.com"
+	svc.clientsByInbound = map[int]map[string]model.Client{}
+	svc.fullyPrimedInbounds = map[int]bool{}
+	svc.settingsByInbound = map[int]map[string]any{}
+	inbound := &model.Inbound{Id: 73, Tag: "shared-csqtt", Port: 54789, Protocol: model.CSQTT, Settings: `{}`}
+	svc.primeLinkClients(inbound.Id, []model.Client{
+		{Email: "alice", Password: "alice-secret"},
+		{Email: "bob", Password: "bob-secret"},
+	}, true)
+
+	for email, wantPassword := range map[string]string{"alice": "alice-secret", "bob": "bob-secret"} {
+		link := svc.genSidecarTunnelLink(inbound, email)
+		u, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("parse %s link: %v", email, err)
+		}
+		if u.Scheme != "csqtt" || u.Query().Get("password") != wantPassword {
+			t.Fatalf("%s got link %q, want its own password", email, link)
+		}
+	}
+}
 
 func TestGetSubsIncludesManagedSidecarLinks(t *testing.T) {
 	initSubDB(t)

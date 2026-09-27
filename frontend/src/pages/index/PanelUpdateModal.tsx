@@ -32,6 +32,9 @@ interface PanelUpdateModalProps {
   onChannelChange?: (dev: boolean) => void | Promise<void>;
   onClose: () => void;
   onBusy: (e: BusyEvent) => void;
+  autoPrompt?: boolean;
+  onLater?: () => void;
+  onSkip?: () => void;
 }
 
 export default function PanelUpdateModal({
@@ -42,6 +45,9 @@ export default function PanelUpdateModal({
   onChannelChange,
   onClose,
   onBusy,
+  autoPrompt,
+  onLater,
+  onSkip,
 }: PanelUpdateModalProps) {
   const { t } = useTranslation();
   const [modal, contextHolder] = Modal.useModal();
@@ -207,6 +213,12 @@ export default function PanelUpdateModal({
         </div>
 
         <div className="actions-row">
+          {autoPrompt && (
+            <>
+              <Button onClick={onLater}>Позже</Button>
+              <Button onClick={onSkip}>Пропустить версию</Button>
+            </>
+          )}
           {isFork && (
             <Button loading={checkBusy} onClick={() => void checkRelease()}>
               Проверить релиз

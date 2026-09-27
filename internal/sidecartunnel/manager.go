@@ -113,6 +113,12 @@ type Manager struct {
 	procs map[int]*managed
 }
 
+const (
+	csqttInterface = "csqttxui"
+	csqttAddress   = "10.66.68.1/24"
+	csqttSubnet    = "10.66.68.0/24"
+)
+
 var singleton = &Manager{procs: make(map[int]*managed)}
 
 func GetManager() *Manager { return singleton }
@@ -317,6 +323,15 @@ func prepareCSQTTNetwork(port int) error {
 	if _, err := os.Stat("/dev/net/tun"); err != nil {
 		return fmt.Errorf("CSQTT requires /dev/net/tun: %w", err)
 	}
+	// The pinned, patched CSQTT build uses a separate interface and subnet so
+	// an existing SWG-CSQTT on csqtt1 can remain untouched.
+	ctx := context.Background()
+	if exec.CommandContext(ctx, "ip", "link", "show", "dev", csqttInterface).Run() == nil {
+		return fmt.Errorf("CSQTT cannot start: TUN %s is already present; identify its owner before removing anything", csqttInterface)
+	}
+	if output, err := exec.CommandContext(ctx, "ip", "-4", "route", "show", csqttSubnet).Output(); err == nil && strings.TrimSpace(string(output)) != "" {
+		return fmt.Errorf("CSQTT cannot start: subnet %s already has a route", csqttSubnet)
+	}
 	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0o644); err != nil {
 		return fmt.Errorf("enable IPv4 forwarding for CSQTT: %w", err)
 	}
@@ -341,10 +356,10 @@ func prepareCSQTTNetwork(port int) error {
 		args  []string
 	}{
 		{"filter", "INPUT", []string{"-p", "udp", "--dport", strconv.Itoa(port), "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
-		{"filter", "INPUT", []string{"-i", "csqtt1", "-s", "10.66.67.0/24", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
-		{"filter", "FORWARD", []string{"-i", "csqtt1", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
-		{"filter", "FORWARD", []string{"-o", "csqtt1", "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
-		{"nat", "POSTROUTING", []string{"-s", "10.66.67.0/24", "-o", wan, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "MASQUERADE"}},
+		{"filter", "INPUT", []string{"-i", csqttInterface, "-s", csqttSubnet, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"filter", "FORWARD", []string{"-i", csqttInterface, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"filter", "FORWARD", []string{"-o", csqttInterface, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "ACCEPT"}},
+		{"nat", "POSTROUTING", []string{"-s", csqttSubnet, "-o", wan, "-m", "comment", "--comment", "3XUI_CSQTT", "-j", "MASQUERADE"}},
 	}
 	for _, rule := range rules {
 		if err := ensureIPTablesRule(rule.table, rule.chain, rule.args); err != nil {
@@ -406,14 +421,18 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		}
 		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--wg-port", strconv.Itoa(inst.Settings.WGPort), "--config-dir", dir), nil
 	case model.CSQTT:
-		if err := prepareCSQTT(inst); err != nil {
-			return nil, err
-		}
 		if err := prepareCSQTTNetwork(inst.Port); err != nil {
 			return nil, err
 		}
-		webPort := 48000 + inst.ID%10000
-		return exec.CommandContext(context.Background(), bin, "--listen", fmt.Sprintf("%s:%d", listen, inst.Port), "--web-port", strconv.Itoa(webPort), "--config-dir", dir), nil
+		if err := prepareCSQTT(inst); err != nil {
+			return nil, err
+		}
+		return exec.CommandContext(context.Background(), bin,
+			"--listen", fmt.Sprintf("%s:%d", listen, inst.Port),
+			"--config-dir", dir,
+			"--iface", csqttInterface,
+			"--tun-addr", csqttAddress,
+			"--no-web"), nil
 	case model.OpenFlux:
 		if len(inst.Settings.Clients) != 1 {
 			return nil, errors.New("OpenFlux inbound requires exactly one client")
@@ -429,6 +448,14 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		if codec == "" {
 			codec = "batched"
 		}
+		if len(inst.Settings.Transports) > 1 && codec != "batched" {
+			return nil, errors.New("OpenFlux multi-transport requires batched codec")
+		}
+		if len(inst.Settings.Transports) == 1 && codec != "batched" &&
+			(inst.Settings.Negotiate || inst.Settings.Transports[0].Type == "direct") &&
+			inst.Settings.Transports[0].Type != "cupsonline" {
+			return nil, errors.New("OpenFlux negotiated session requires batched codec")
+		}
 		args := []string{"--role=exit", "--mode=" + mode, "--codec=" + codec, "--encryption-key-file=" + filepath.Join(dir, "secret.key")}
 		if len(inst.Settings.Transports) > 0 {
 			parts := make([]string, 0, len(inst.Settings.Transports))
@@ -440,27 +467,40 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 				}
 				seen[transport.Type] = true
 				parts = append(parts, fmt.Sprintf("%s:%d", transport.Type, transport.Priority))
-				if transport.URL != "" && transport.Type != "cupsonline" {
-					args = append(args, "--"+transport.Type+"-url="+transport.URL)
+				url := strings.TrimSpace(transport.URL)
+				if transport.Type == "cupsonline" && url == "" {
+					url = inst.Settings.CupsCode
 				}
-				if contextURL == "" && transport.Type == "yandex" && transport.URL != "" {
-					contextURL = transport.URL
+				if url != "" && len(inst.Settings.Transports) > 1 {
+					args = append(args, "--"+transport.Type+"-url="+url)
+				}
+				if contextURL == "" && transport.Type == "yandex" && url != "" {
+					contextURL = url
 				}
 			}
 			if contextURL == "" {
 				for _, transport := range inst.Settings.Transports {
-					if transport.URL != "" {
-						contextURL = transport.URL
+					url := strings.TrimSpace(transport.URL)
+					if transport.Type == "cupsonline" && url == "" {
+						url = inst.Settings.CupsCode
+					}
+					if url != "" {
+						contextURL = url
 						break
 					}
 				}
 			}
-			if contextURL == "" && seen["cupsonline"] {
-				contextURL = "cupsonline"
-			}
-			args = append(args, "--transports="+strings.Join(parts, ","))
-			if inst.Settings.Negotiate || len(inst.Settings.Transports) > 1 {
-				args = append(args, "--negotiate")
+			if len(inst.Settings.Transports) == 1 {
+				transport := inst.Settings.Transports[0]
+				args = append(args, "--transport="+transport.Type)
+				if transport.Type == "cupsonline" && inst.Settings.CupsCode != "" {
+					contextURL = inst.Settings.CupsCode
+				}
+				if (inst.Settings.Negotiate || transport.Type == "direct") && transport.Type != "cupsonline" {
+					args = append(args, "--negotiate")
+				}
+			} else {
+				args = append(args, "--transports="+strings.Join(parts, ","), "--negotiate")
 			}
 			if contextURL != "" {
 				args = append(args, "--url="+contextURL)
@@ -471,16 +511,29 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		} else {
 			return nil, errors.New("OpenFlux requires at least one transport")
 		}
-		args = append(args, "--cookie-store="+filepath.Join(dir, "cookies.json"))
+		if !seenDirectOnly(inst.Settings.Transports) {
+			args = append(args, "--cookie-store="+filepath.Join(dir, "cookies.json"))
+		}
 		return exec.CommandContext(context.Background(), bin, args...), nil
 	default:
 		return nil, fmt.Errorf("unsupported sidecar protocol %s", inst.Protocol)
 	}
 }
 
+func seenDirectOnly(transports []Transport) bool {
+	return len(transports) == 1 && transports[0].Type == "direct"
+}
+
 func (m *Manager) Ensure(inst Instance) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if inst.Protocol == model.CSQTT {
+		for id, other := range m.procs {
+			if id != inst.ID && other.instance.Protocol == model.CSQTT && other.cmd != nil {
+				return fmt.Errorf("3x-ui manages one CSQTT instance on %s (already managed by inbound %d)", csqttInterface, id)
+			}
+		}
+	}
 	fingerprint := inst.fingerprint()
 	if current := m.procs[inst.ID]; current != nil && current.fingerprint == fingerprint && current.cmd != nil {
 		return nil
@@ -520,8 +573,12 @@ func (m *Manager) capture(ctx context.Context, proc *managed, reader io.Reader) 
 		if expectCode && line != "" {
 			expectCode = false
 			if validCupsCode(line) {
-				m.persistCupsCode(proc.instance.ID, line)
+				m.persistCupsCode(proc, line)
+				continue // Room codes are client credentials; never write them to logs.
 			}
+		}
+		if strings.Contains(line, "generated web password:") || strings.Contains(line, "generated main password:") {
+			line = "[generated CSQTT password redacted]"
 		}
 		if line != "" {
 			logger.Infof("%s[%d]: %s", proc.instance.Protocol, proc.instance.ID, line)
@@ -543,14 +600,18 @@ func validCupsCode(value string) bool {
 	return json.Unmarshal(raw, &rooms) == nil && len(rooms) > 0
 }
 
-func (m *Manager) persistCupsCode(id int, code string) {
+func (m *Manager) persistCupsCode(proc *managed, code string) {
 	m.mu.Lock()
-	if proc := m.procs[id]; proc != nil {
-		proc.instance.Settings.CupsCode = code
+	current := m.procs[proc.instance.ID]
+	if current != proc || current.instance.Settings.CupsCode == code {
+		m.mu.Unlock()
+		return
 	}
+	firstRoom := current.instance.Settings.CupsCode == ""
+	current.instance.Settings.CupsCode = code
 	m.mu.Unlock()
 	var inbound model.Inbound
-	if err := database.GetDB().First(&inbound, id).Error; err != nil {
+	if err := database.GetDB().First(&inbound, proc.instance.ID).Error; err != nil {
 		return
 	}
 	var settings map[string]any
@@ -560,7 +621,30 @@ func (m *Manager) persistCupsCode(id int, code string) {
 	settings["cupsCode"] = code
 	raw, err := json.Marshal(settings)
 	if err == nil {
-		_ = database.GetDB().Model(&model.Inbound{}).Where("id = ?", id).UpdateColumn("settings", string(raw)).Error
+		_ = database.GetDB().Model(&model.Inbound{}).Where("id = ?", proc.instance.ID).UpdateColumn("settings", string(raw)).Error
+	}
+	hasCups := false
+	for _, transport := range proc.instance.Settings.Transports {
+		if transport.Type == "cupsonline" {
+			hasCups = true
+			break
+		}
+	}
+	if firstRoom && hasCups {
+		go func() {
+			time.Sleep(time.Second)
+			m.mu.Lock()
+			if m.procs[proc.instance.ID] != proc {
+				m.mu.Unlock()
+				return
+			}
+			inst := proc.instance
+			m.removeLocked(inst.ID)
+			m.mu.Unlock()
+			if err := m.Ensure(inst); err != nil {
+				logger.Warningf("OpenFlux[%d] restart after Cups room creation failed: %v", inst.ID, err)
+			}
+		}()
 	}
 }
 

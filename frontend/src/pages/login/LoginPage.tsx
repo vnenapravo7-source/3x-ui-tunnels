@@ -26,7 +26,6 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { HttpUtil, LanguageManager } from '@/utils';
 import { FormField, rhfZodValidate } from '@/components/form/rhf';
 import { setMessageInstance } from '@/utils/messageBus';
-import SponsorSlot from '@/components/sponsor/SponsorSlot';
 import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
 import { LoginFormSchema, TwoFactorCodeSchema, type LoginFormValues } from '@/schemas/login';
 import './LoginPage.css';
@@ -81,7 +80,12 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const msg = await HttpUtil.post('/login', values);
-      if (msg.success) window.location.href = basePath + 'panel/';
+      if (msg.success) {
+        try {
+          sessionStorage.removeItem('fork-release-checked-this-login');
+        } catch {}
+        window.location.href = basePath + 'panel/';
+      }
     } finally {
       setSubmitting(false);
     }
@@ -248,7 +252,6 @@ export default function LoginPage() {
                     </Form.Item>
                   </Form>
                 </FormProvider>
-                <SponsorSlot slot="login" variant="compact" className="login-sponsor" />
               </div>
             )}
           </div>
