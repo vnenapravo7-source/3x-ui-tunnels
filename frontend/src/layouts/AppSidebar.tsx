@@ -217,26 +217,28 @@ export default function AppSidebar() {
   }, [updateHovered]);
 
   const checkForkRelease = useCallback(async (manual = false) => {
-    const msg = await HttpUtil.get<PanelUpdateInfo>('/panel/api/server/getPanelUpdateInfo');
-    if (!msg?.success || !msg.obj) return;
-    setUpdateInfo(msg.obj);
-    if (manual) {
-      setAutoPrompt(false);
-      setUpdateOpen(true);
-      return;
-    }
     try {
-      sessionStorage.setItem(UPDATE_CHECKED_KEY, '1');
-      if (
-        msg.obj.channel === 'fork' &&
-        msg.obj.updateAvailable &&
-        localStorage.getItem(UPDATE_SKIPPED_KEY) !== msg.obj.latestVersion
-      ) {
+      const msg = await HttpUtil.get<PanelUpdateInfo>('/panel/api/server/getPanelUpdateInfo');
+      if (!msg?.success || !msg.obj) return;
+      setUpdateInfo(msg.obj);
+      if (manual) {
+        setAutoPrompt(false);
+        setUpdateOpen(true);
+        return;
+      }
+      let skipped = false;
+      try {
+        sessionStorage.setItem(UPDATE_CHECKED_KEY, '1');
+        skipped = localStorage.getItem(UPDATE_SKIPPED_KEY) === msg.obj.latestVersion;
+      } catch {
+        /* Storage may be disabled. */
+      }
+      if (msg.obj.channel === 'fork' && msg.obj.updateAvailable && !skipped) {
         setAutoPrompt(true);
         setUpdateOpen(true);
       }
     } catch {
-      /* Storage can be disabled; checking the release still works. */
+      /* A transient GitHub/API failure must not break navigation. */
     }
   }, []);
 
