@@ -1,10 +1,13 @@
 package sub
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/url"
@@ -898,6 +901,28 @@ func (s *SubService) genSidecarTunnelLink(inbound *model.Inbound, email string) 
 				transport.URL, _ = settings["cupsCode"].(string)
 			}
 			req.Transports = append(req.Transports, transport)
+		}
+		// The encryption context must be byte-for-byte identical on the phone
+		// and the exit. The runner derives an omitted context from the Yandex
+		// document URL first, then from the first URL-bearing transport. Mirror
+		// that derivation in the share link; previously multi profiles with an
+		// empty optional field encrypted each side with a different context and
+		// never completed their handshake even when another carrier was live.
+		if strings.TrimSpace(req.Context) == "" {
+			for _, transport := range req.Transports {
+				if transport.Type == "yandex" && strings.TrimSpace(transport.URL) != "" {
+					req.Context = strings.TrimSpace(transport.URL)
+					break
+				}
+			}
+		}
+		if strings.TrimSpace(req.Context) == "" {
+			for _, transport := range req.Transports {
+				if strings.TrimSpace(transport.URL) != "" {
+					req.Context = strings.TrimSpace(transport.URL)
+					break
+				}
+			}
 		}
 		if len(req.Transports) > 1 {
 			req.Negotiate = true // Multi-transport sessions always negotiate.
@@ -3102,6 +3127,45 @@ type PageData struct {
 	SubAnnounce   string
 	Result        []string
 	Emails        []string
+	LinkNames     []string
+}
+
+// sidecarLinkName reads the display name already carried by the managed
+// sidecar share links. Keeping it as page metadata lets the subscription UI
+// show the inbound remark without changing the link copied into client apps.
+func sidecarLinkName(link string) string {
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "wdtt", "csqtt":
+		return strings.TrimSpace(u.Query().Get("name"))
+	case "openflux":
+		const prefix = "openflux://v1/"
+		if !strings.HasPrefix(strings.ToLower(link), prefix) {
+			return ""
+		}
+		packed, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(link[len(prefix):]))
+		if err != nil {
+			return ""
+		}
+		r := flate.NewReader(bytes.NewReader(packed))
+		raw, err := io.ReadAll(io.LimitReader(r, 1<<20))
+		_ = r.Close()
+		if err != nil {
+			return ""
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return ""
+		}
+		return strings.TrimSpace(payload.Name)
+	default:
+		return ""
+	}
 }
 
 // ResolveRequest extracts scheme and host info from request/headers consistently.
@@ -3243,6 +3307,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 
 	pageLinks := make([]string, 0, len(subs))
 	pageEmails := make([]string, 0, len(subs))
+	pageLinkNames := make([]string, 0, len(subs))
 	for i, sub := range subs {
 		email := ""
 		if i < len(emails) {
@@ -3251,6 +3316,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 		for _, link := range splitLinkLines(sub) {
 			pageLinks = append(pageLinks, link)
 			pageEmails = append(pageEmails, email)
+			pageLinkNames = append(pageLinkNames, sidecarLinkName(link))
 		}
 	}
 
@@ -3278,6 +3344,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 		SubSupportUrl: subSupportUrl,
 		Result:        pageLinks,
 		Emails:        pageEmails,
+		LinkNames:     pageLinkNames,
 	}
 }
 

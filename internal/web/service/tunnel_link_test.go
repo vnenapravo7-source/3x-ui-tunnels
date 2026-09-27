@@ -32,13 +32,17 @@ func TestBuildWDTTPlusLink(t *testing.T) {
 
 func TestBuildCSQTTLinkUsesLiteralPlusSeparator(t *testing.T) {
 	link, err := BuildTunnelLink(TunnelLinkRequest{
-		Protocol: "csqtt", Host: "2001:db8::1", PeerPort: 56000, Password: "p@ss", Hashes: []string{"a+b", "second"},
+		Protocol: "csqtt", Name: "office-alice", Host: "2001:db8::1", PeerPort: 56000, Password: "p@ss", Hashes: []string{"a+b", "second"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(link, "hashes=a%2Bb+second") {
 		t.Fatalf("hash separator/escaping is wrong: %s", link)
+	}
+	u, err := url.Parse(link)
+	if err != nil || u.Query().Get("name") != "office-alice" {
+		t.Fatalf("CSQTT link lost its display name: %s", link)
 	}
 }
 

@@ -1,6 +1,11 @@
 package sub
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -8,6 +13,25 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 )
+
+func decodeOpenFluxShareForTest(t *testing.T, link string) map[string]any {
+	t.Helper()
+	packed, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(link, "openflux://v1/"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := flate.NewReader(bytes.NewReader(packed))
+	raw, err := io.ReadAll(r)
+	_ = r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
 
 func TestCSQTTShareLinksUseEachPanelClientPassword(t *testing.T) {
 	svc := NewSubService("")
@@ -75,5 +99,24 @@ func TestGetSubsIncludesManagedSidecarLinks(t *testing.T) {
 		if !strings.HasPrefix(links[i], tc.prefix) {
 			t.Errorf("%s link = %q, want prefix %q", tc.protocol, links[i], tc.prefix)
 		}
+	}
+}
+
+func TestOpenFluxMultiShareDerivesSameYandexContextAsRunner(t *testing.T) {
+	const key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const yandexURL = "https://disk.yandex.ru/i/shared-doc"
+	svc := NewSubService("")
+	svc.address = "vpn.example.com"
+	svc.clientsByInbound = map[int]map[string]model.Client{}
+	svc.fullyPrimedInbounds = map[int]bool{}
+	svc.settingsByInbound = map[int]map[string]any{}
+	inbound := &model.Inbound{
+		Id: 99, Remark: "multi", Port: 443, Protocol: model.OpenFlux,
+		Settings: `{"codec":"batched","negotiate":true,"transports":[{"type":"mailru","url":"https://cloud.mail.ru/public/x"},{"type":"yandex","url":"` + yandexURL + `"}]}`,
+	}
+	svc.primeLinkClients(inbound.Id, []model.Client{{Email: "alice", Password: key}}, true)
+	payload := decodeOpenFluxShareForTest(t, svc.genSidecarTunnelLink(inbound, "alice"))
+	if payload["context"] != yandexURL {
+		t.Fatalf("context = %v, want runner-derived Yandex URL %q", payload["context"], yandexURL)
 	}
 }

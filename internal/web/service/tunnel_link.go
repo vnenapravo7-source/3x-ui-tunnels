@@ -148,6 +148,9 @@ func buildCSQTTLink(req TunnelLinkRequest) (string, error) {
 	q.Set("host", host)
 	q.Set("peer", strconv.Itoa(req.PeerPort))
 	q.Set("password", req.Password)
+	if name := strings.TrimSpace(req.Name); name != "" {
+		q.Set("name", name)
+	}
 	if hashes := cleanTunnelHashes(req.Hashes, 6); len(hashes) > 0 {
 		// CSQTT assigns a literal '+' as the separator. Values.Encode would
 		// escape it as %2B, so append the already escaped individual hashes.

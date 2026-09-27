@@ -686,6 +686,7 @@ func (a *SUBController) subPageContext(page PageData) map[string]any {
 		"subUpdates":    updateHours,
 		"links":         page.Result,
 		"emails":        page.Emails,
+		"linkNames":     page.LinkNames,
 		"datepicker":    datepicker,
 		"announce":      page.SubAnnounce,
 	}
