@@ -899,6 +899,16 @@ func (s *SubService) genSidecarTunnelLink(inbound *model.Inbound, email string) 
 			}
 			req.Transports = append(req.Transports, transport)
 		}
+		if len(req.Transports) > 1 {
+			req.Negotiate = true // Multi-transport sessions always negotiate.
+		} else if len(req.Transports) == 1 && req.Transports[0].Type == "cupsonline" {
+			req.Negotiate = false // The working single-Cups exit uses the legacy path.
+			if req.Transports[0].URL != "" {
+				req.Context = req.Transports[0].URL
+			}
+		} else if len(req.Transports) == 1 && req.Transports[0].Type == "direct" {
+			req.Negotiate = true // Direct is implemented only by OpenFlux's session path.
+		}
 		if req.Context == "" {
 			for _, transport := range req.Transports {
 				if transport.Type == "yandex" && transport.URL != "" {
@@ -916,7 +926,7 @@ func (s *SubService) genSidecarTunnelLink(inbound *model.Inbound, email string) 
 			}
 		}
 		if req.Context == "" {
-			req.Context = "cupsonline"
+			req.Context = "http://#" // OpenFlux's default globalDocUrl.
 		}
 	}
 

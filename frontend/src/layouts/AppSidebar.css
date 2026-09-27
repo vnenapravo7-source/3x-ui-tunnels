@@ -294,6 +294,9 @@
   font-weight: 500;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   text-decoration: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   transition: color 0.2s;
 }
 

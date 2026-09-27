@@ -5,20 +5,20 @@
 ## Установка
 
 ```bash
-bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/install.sh) fork-v3.8.5-4
+bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/install.sh) fork-v3.8.5-5
 x-ui tunnels install all
 ```
 
-Вторая команда ставит или обновляет серверные компоненты OpenFlux, WDTT и CSQTT. Затем создайте протокол во **Входящих**, прикрепите клиента и откройте **Клиенты → QR-код → разверните нужный протокол**; те же `openflux://`, `wdtt://`, `csqtt://` будут в подписке на вкладке **Конфиги**. Для OpenFlux ключ создаётся на 32 байта, доступны до 8 транспортов, а Cups.online сам создаёт комнату и добавляет её код в ссылку. FastOpenFlux выставляет Direct + Yandex Docs + Mail.ru Docs; ссылки на два документа нужно указать вручную.
+Вторая команда ставит серверные компоненты OpenFlux, WDTT и CSQTT. Затем создайте протокол во **Входящих**, прикрепите клиента и откройте **Клиенты → QR-код → разверните нужный протокол**; те же `openflux://`, `wdtt://`, `csqtt://` будут в подписке на вкладке **Конфиги**. Для OpenFlux ключ создаётся на 32 байта, доступны до 8 транспортов, а Cups.online сам создаёт комнату, перезапускается с её кодом и добавляет его в ссылку. FastOpenFlux выставляет Direct + Yandex Docs + Mail.ru Docs; ссылки на два документа нужно указать вручную. CSQTT работает на отдельном интерфейсе `csqttxui` и не останавливает уже работающий SWG-CSQTT на `csqtt1`.
 
 ## Обновление форка
 
 ```bash
-XUI_UPDATE_TAG=fork-v3.8.5-4 bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh)
+XUI_UPDATE_TAG=fork-v3.8.5-5 bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh)
 x-ui tunnels update all
 ```
 
-Обычная команда меню также остаётся доступна: `x-ui update`. В панели на главной странице нажмите номер версии → **Проверить релиз** → **Обновить панель**; проверка и обновление используют релизы этого форка, а не upstream 3x-ui.
+Обычная команда меню также остаётся доступна: `x-ui update`. В панели нажмите версию форка внизу слева для проверки релиза; при входе новый релиз предлагается автоматически с выбором **Позже**, **Пропустить версию** или **Обновить**. Проверка и обновление используют релизы этого форка, а не upstream 3x-ui.
 
 Проверка серверных компонентов: `x-ui tunnels status`. При ошибке подключения смотрите `ss -lunp` и `journalctl -u x-ui -n 100 --no-pager` (перед отправкой журнала удалите пароли). Для WDTT/CSQTT нужны TUN, `ip`, `iptables` и открытый UDP-порт; команда установки проверяет это, а панель настраивает правила для созданных входящих. Счётчик трафика 3x-ui для этих трёх внешних процессов пока не подключён: `0 B` в списке входящих не доказывает отсутствие соединения.
 

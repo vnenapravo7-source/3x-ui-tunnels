@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Drawer, Layout, Menu, Tooltip } from 'antd';
+import { Drawer, Layout, Menu, Spin, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ApiOutlined,
@@ -11,14 +11,12 @@ import {
   CloudServerOutlined,
   ClusterOutlined,
   CodeOutlined,
-  CrownOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   DiscordOutlined,
   ExportOutlined,
   GithubOutlined,
   GlobalOutlined,
-  HeartOutlined,
   ImportOutlined,
   LogoutOutlined,
   MailOutlined,
@@ -40,23 +38,23 @@ import {
 } from '@ant-design/icons';
 
 import { HttpUtil } from '@/utils';
-import { formatPanelVersion } from '@/lib/panel-version';
 import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
 import { useAllSettings } from '@/api/queries/useAllSettings';
 import { useCommandPalette } from '@/components/command-palette/useCommandPalette';
-import SponsorSlot from '@/components/sponsor/SponsorSlot';
+import PanelUpdateModal from '@/pages/index/PanelUpdateModal';
+import type { PanelUpdateInfo } from '@/pages/index/PanelUpdateModal';
 import './AppSidebar.css';
 
-const DONATE_URL = 'https://donate.sanaei.dev/';
 // The palette listens for Ctrl as well as Cmd, so the chip must not show a
 // Mac glyph to the Linux and Windows operators who are most of this panel's.
 const SHORTCUT_MODIFIER = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘' : 'Ctrl';
 const DOCS_URL = 'https://docs.sanaei.dev/';
-const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
 const LOGOUT_KEY = '__logout__';
 const RAIL_WIDTH = 72;
 const SIDER_WIDTH = 220;
 const SIDEBAR_PINNED_KEY = 'sidebar-pinned';
+const UPDATE_CHECKED_KEY = 'fork-release-checked-this-login';
+const UPDATE_SKIPPED_KEY = 'fork-release-skipped';
 
 let hoveredAcrossRemounts = false;
 
@@ -70,7 +68,6 @@ type IconName =
   | 'cluster'
   | 'hosts'
   | 'logout'
-  | 'sponsors'
   | 'apidocs'
   | 'outbound'
   | 'routing';
@@ -85,26 +82,10 @@ const iconByName: Record<IconName, ComponentType> = {
   cluster: ClusterOutlined,
   hosts: GlobalOutlined,
   logout: LogoutOutlined,
-  sponsors: CrownOutlined,
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
 };
-
-function DonateButton({ ariaLabel }: { ariaLabel: string }) {
-  return (
-    <a
-      href={DONATE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="sidebar-donate"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      <HeartOutlined />
-    </a>
-  );
-}
 
 function DocsButton({ ariaLabel }: { ariaLabel: string }) {
   return (
@@ -121,21 +102,27 @@ function DocsButton({ ariaLabel }: { ariaLabel: string }) {
   );
 }
 
-function VersionBadge({ version, collapsed }: { version: string; collapsed?: boolean }) {
-  if (!version) return null;
-  const label = formatPanelVersion(version);
+function VersionBadge({
+  version,
+  collapsed,
+  onCheck,
+}: {
+  version: string;
+  collapsed?: boolean;
+  onCheck: () => void;
+}) {
+  const label = version || 'fork —';
   return (
-    <a
-      href={REPO_URL}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
       className="sider-version"
-      aria-label={`GitHub ${label}`}
-      title={label}
+      aria-label={`Проверить обновление форка (${label})`}
+      title={`Проверить обновление форка (${label})`}
+      onClick={onCheck}
     >
       <GithubOutlined />
       {!collapsed && <span className="sider-version-text">{label}</span>}
-    </a>
+    </button>
   );
 }
 
@@ -194,6 +181,15 @@ export default function AppSidebar() {
   const [hovered, setHovered] = useState(() => hoveredAcrossRemounts);
   const [pinned, setPinned] = useState(readSidebarPinned);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<PanelUpdateInfo>({
+    currentVersion: '',
+    latestVersion: '',
+    updateAvailable: false,
+  });
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [autoPrompt, setAutoPrompt] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const updateCheckStarted = useRef(false);
   const railCollapsed = !hovered && !pinned;
   const railStyle = useMemo(
     () => ({ '--sider-rail': `${pinned ? SIDER_WIDTH : RAIL_WIDTH}px` }) as CSSProperties,
@@ -220,8 +216,47 @@ export default function AppSidebar() {
     return () => window.clearTimeout(timer);
   }, [updateHovered]);
 
+  const checkForkRelease = useCallback(async (manual = false) => {
+    const msg = await HttpUtil.get<PanelUpdateInfo>('/panel/api/server/getPanelUpdateInfo');
+    if (!msg?.success || !msg.obj) return;
+    setUpdateInfo(msg.obj);
+    if (manual) {
+      setAutoPrompt(false);
+      setUpdateOpen(true);
+      return;
+    }
+    try {
+      sessionStorage.setItem(UPDATE_CHECKED_KEY, '1');
+      if (
+        msg.obj.channel === 'fork' &&
+        msg.obj.updateAvailable &&
+        localStorage.getItem(UPDATE_SKIPPED_KEY) !== msg.obj.latestVersion
+      ) {
+        setAutoPrompt(true);
+        setUpdateOpen(true);
+      }
+    } catch {
+      /* Storage can be disabled; checking the release still works. */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (updateCheckStarted.current) return;
+    updateCheckStarted.current = true;
+    try {
+      if (sessionStorage.getItem(UPDATE_CHECKED_KEY)) return;
+    } catch {
+      /* Continue without session storage. */
+    }
+    const timer = window.setTimeout(() => void checkForkRelease(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      updateCheckStarted.current = false;
+    };
+  }, [checkForkRelease]);
+
   const currentTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
-  const panelVersion = window.X_UI_CUR_VER || '';
+  const panelVersion = updateInfo.currentVersion;
 
   const tabs = useMemo<{ key: string; icon: IconName; title: string }[]>(
     () => [
@@ -236,7 +271,6 @@ export default function AppSidebar() {
       { key: '/settings', icon: 'setting', title: t('menu.settings') },
       { key: '/xray', icon: 'tool', title: t('menu.xray') },
       { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },
-      { key: '/sponsors', icon: 'sponsors', title: t('menu.sponsors') },
       { key: LOGOUT_KEY, icon: 'logout', title: t('logout') },
     ],
     [t],
@@ -335,6 +369,9 @@ export default function AppSidebar() {
   const openLink = useCallback(
     async (key: string) => {
       if (key === LOGOUT_KEY) {
+        try {
+          sessionStorage.removeItem(UPDATE_CHECKED_KEY);
+        } catch {}
         await HttpUtil.post('/logout');
         window.location.href = window.X_UI_BASE_PATH || '/';
         return;
@@ -398,7 +435,6 @@ export default function AppSidebar() {
                 {pinned ? <PushpinFilled /> : <PushpinOutlined />}
               </button>
               <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-              <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
               <ThemeCycleButton
                 id="theme-cycle"
                 isDark={isDark}
@@ -452,14 +488,11 @@ export default function AppSidebar() {
           onClick={onMenuClick}
         />
         <div className="sider-footer">
-          <SponsorSlot
-            slot="sidebar"
-            variant="compact"
-            iconOnly={railCollapsed}
-            rotate
-            className="sider-sponsor"
+          <VersionBadge
+            version={panelVersion}
+            collapsed={railCollapsed}
+            onCheck={() => void checkForkRelease(true)}
           />
-          <VersionBadge version={panelVersion} collapsed={railCollapsed} />
         </div>
       </Layout.Sider>
 
@@ -482,7 +515,6 @@ export default function AppSidebar() {
           </div>
           <div className="drawer-header-actions">
             <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-            <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
             <ThemeCycleButton
               id="theme-cycle-drawer"
               isDark={isDark}
@@ -544,8 +576,7 @@ export default function AppSidebar() {
           }}
         />
         <div className="drawer-footer">
-          <SponsorSlot slot="sidebar" variant="compact" rotate className="sider-sponsor" />
-          <VersionBadge version={panelVersion} />
+          <VersionBadge version={panelVersion} onCheck={() => void checkForkRelease(true)} />
         </div>
       </Drawer>
 
@@ -559,6 +590,22 @@ export default function AppSidebar() {
           <MenuOutlined />
         </button>
       )}
+      <PanelUpdateModal
+        open={updateOpen}
+        info={updateInfo}
+        onCheck={() => checkForkRelease(true)}
+        onClose={() => setUpdateOpen(false)}
+        onBusy={({ busy }) => setUpdateBusy(busy)}
+        autoPrompt={autoPrompt}
+        onLater={() => setUpdateOpen(false)}
+        onSkip={() => {
+          try {
+            localStorage.setItem(UPDATE_SKIPPED_KEY, updateInfo.latestVersion);
+          } catch {}
+          setUpdateOpen(false);
+        }}
+      />
+      <Spin spinning={updateBusy} fullscreen tip="Обновление панели…" />
     </div>
   );
 }

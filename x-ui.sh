@@ -249,7 +249,7 @@ ensure_tunnel_host_tools() {
 }
 
 install_tunnel_binary() {
-    local kind="$1" machine arch openflux_arch url tmpdir asset
+    local kind="$1" machine arch openflux_arch url tmpdir asset expected_hash actual_hash
     if [[ "$kind" == "wdtt" || "$kind" == "csqtt" ]]; then
         ensure_tunnel_host_tools || return 1
     fi
@@ -283,22 +283,19 @@ install_tunnel_binary() {
             command install -m 0755 "$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
             ;;
         csqtt)
-            command -v unzip > /dev/null 2>&1 || {
-                case "$release" in
-                    ubuntu | debian | armbian) apt-get update && apt-get install -y unzip ;;
-                    centos | rhel | almalinux | rocky | ol | fedora) yum install -y unzip ;;
-                    alpine) apk add --no-cache unzip ;;
-                    *) LOGE 'Install unzip and retry.'; rm -rf "$tmpdir"; return 1 ;;
-                esac
-            }
-            command -v unzip >/dev/null 2>&1 || { LOGE 'unzip is still unavailable.'; rm -rf "$tmpdir"; return 1; }
-            url="$(tunnel_asset_url 'amurcanov/csqtt' 'universal.*\.apk$')"
-            [[ -n "$url" ]] || url="$(tunnel_asset_url 'amurcanov/csqtt' '\.apk$')"
-            [[ -n "$url" ]] || { LOGE 'CSQTT APK asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/csqtt.apk" || { rm -rf "$tmpdir"; return 1; }
-            unzip -p "$tmpdir/csqtt.apk" "assets/csqtt-linux-${arch}" > "$tmpdir/csqtt" || { rm -rf "$tmpdir"; return 1; }
-            [[ -s "$tmpdir/csqtt" ]] || { LOGE 'CSQTT server asset is missing from the APK.'; rm -rf "$tmpdir"; return 1; }
-            command install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/csqtt-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
+            case "$arch" in
+                amd64) expected_hash='217623e942adece338827c88d105d5f466afaeb49cb4a35c7716ef23ef1767fa' ;;
+                arm64) expected_hash='120b77fc5e4e3e1fcf2f80b71e6d3375baf31d12f5153b6adf877ca18011eb0a' ;;
+                *) LOGE 'The multi-instance CSQTT server supports amd64 and arm64 only.'; rm -rf "$tmpdir"; return 1 ;;
+            esac
+            # Pinned amurcanov/csqtt 2.1.9 build with configurable TUN name/subnet.
+            # The checksum is from SanityProtocol/swg-panel release csqtt-2.1.9-2.
+            url="https://github.com/SanityProtocol/swg-panel/releases/download/csqtt-2.1.9-2/server-linux-${arch}"
+            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/csqtt" || { rm -rf "$tmpdir"; return 1; }
+            actual_hash="$(sha256sum "$tmpdir/csqtt" | awk '{print $1}')"
+            [[ "$actual_hash" == "$expected_hash" ]] || { LOGE 'CSQTT asset checksum mismatch; installation aborted.'; rm -rf "$tmpdir"; return 1; }
+            command install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/.csqtt-linux-${arch}.$$" || { rm -rf "$tmpdir"; return 1; }
+            mv -f "${xui_folder}/bin/.csqtt-linux-${arch}.$$" "${xui_folder}/bin/csqtt-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
             ;;
         *) LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'; rm -rf "$tmpdir"; return 1 ;;
     esac
@@ -309,7 +306,7 @@ install_tunnel_binary() {
 tunnels_command() {
     local action="$1" kind="${2:-all}" failed=0 installed=0
     if [[ "$action" == "status" ]]; then
-        local item binary count status_arch
+        local item binary count status_arch proc_path process_exe
         case "$(uname -m)" in
             x86_64 | amd64) status_arch=amd64 ;;
             aarch64 | arm64) status_arch=arm64 ;;
@@ -323,11 +320,11 @@ tunnels_command() {
                 csqtt) binary="csqtt-linux-${status_arch}" ;;
             esac
             if [[ -x "${xui_folder}/bin/${binary}" ]]; then
-                if command -v pgrep >/dev/null 2>&1; then
-                    count="$(pgrep -fc "^${xui_folder}/bin/${binary}([[:space:]]|$)" 2>/dev/null || true)"
-                else
-                    count='unknown (pgrep unavailable)'
-                fi
+                count=0
+                for proc_path in /proc/[0-9]*/exe; do
+                    process_exe="$(readlink -f -- "$proc_path" 2>/dev/null || true)"
+                    [[ "$process_exe" == "${xui_folder}/bin/${binary}" ]] && ((count += 1))
+                done
                 printf '%s: installed, running processes: %s\n' "$item" "${count:-0}"
             else
                 printf '%s: server binary missing\n' "$item"
@@ -344,6 +341,12 @@ tunnels_command() {
             printf 'TUN: available\n'
         else
             printf 'TUN: MISSING (/dev/net/tun)\n'
+        fi
+        if command -v ip >/dev/null 2>&1 && ip link show dev csqtt1 >/dev/null 2>&1; then
+            printf 'CSQTT: another instance uses csqtt1 (3x-ui uses separate csqttxui)\n'
+        fi
+        if command -v ip >/dev/null 2>&1 && ip link show dev csqttxui >/dev/null 2>&1; then
+            printf 'CSQTT: 3x-ui interface csqttxui is present\n'
         fi
         if [[ -r /proc/sys/net/ipv4/ip_forward ]]; then
             printf 'IPv4 forwarding: %s\n' "$(< /proc/sys/net/ipv4/ip_forward)"
