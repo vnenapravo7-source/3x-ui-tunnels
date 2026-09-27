@@ -1267,9 +1267,24 @@ update_x-ui() {
     # Never fatal.
     setup_fail2ban
 
-    # CSQTT is force-migrated to the pinned multi-instance build. Existing
-    # OpenFlux and WDTT binaries stay untouched so imported client links cannot
-    # be invalidated by an independent wire-protocol change.
+    # Release archives may contain an older control script. Refresh it from the
+    # fork before updating independently published sidecars, so a panel update
+    # does not need a new full release just to ship OpenFlux/WDTT/CSQTT fixes.
+    xui_script_tmp="$(mktemp)"
+    if curl -fL --retry 5 --retry-all-errors \
+        "https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/x-ui.sh" \
+        -o "${xui_script_tmp}"; then
+        install -m 0755 "${xui_script_tmp}" /usr/bin/x-ui
+        install -m 0755 "${xui_script_tmp}" "${xui_folder}/x-ui.sh"
+    else
+        echo -e "${yellow}Could not refresh the fork control script; keeping the installed copy.${plain}"
+    fi
+    rm -f "${xui_script_tmp}"
+
+    if ! /usr/bin/x-ui tunnels update openflux; then
+        echo -e "${yellow}OpenFlux could not be updated automatically.${plain}"
+        echo -e "${yellow}Retry with 'x-ui tunnels update openflux'.${plain}"
+    fi
     if ! /usr/bin/x-ui tunnels update csqtt; then
         echo -e "${yellow}CSQTT could not be updated automatically.${plain}"
         echo -e "${yellow}Run 'x-ui tunnels status' and retry with 'x-ui tunnels update csqtt'.${plain}"
@@ -1281,11 +1296,8 @@ update_x-ui() {
         armv7l | armv7 | armhf) tunnel_arch="armv7" ;;
         *) tunnel_arch="$(uname -m)" ;;
     esac
-    if [[ ! -x "${xui_folder}/bin/openflux-linux-${tunnel_arch}" ]]; then
-        /usr/bin/x-ui tunnels install openflux || echo -e "${yellow}OpenFlux is not installed; retry with 'x-ui tunnels install openflux'.${plain}"
-    fi
-    if [[ "${tunnel_arch}" == "amd64" && ! -x "${xui_folder}/bin/wdtt-server-linux-amd64" ]]; then
-        /usr/bin/x-ui tunnels install wdtt || echo -e "${yellow}WDTT is not installed; retry with 'x-ui tunnels install wdtt'.${plain}"
+    if [[ "${tunnel_arch}" == "amd64" ]]; then
+        /usr/bin/x-ui tunnels update wdtt || echo -e "${yellow}WDTT could not be updated; retry with 'x-ui tunnels update wdtt'.${plain}"
     fi
     /usr/bin/x-ui tunnels status || true
 
