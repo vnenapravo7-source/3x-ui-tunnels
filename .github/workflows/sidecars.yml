@@ -1,0 +1,105 @@
+name: Publish tunnel sidecars
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Sidecar to refresh
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - openflux
+          - wdtt
+          - csqtt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sidecars-edge
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout patched OpenFlux
+        if: inputs.component == 'all' || inputs.component == 'openflux'
+        uses: actions/checkout@v4
+        with:
+          repository: vnenapravo7-source/OpenFlux
+          ref: main
+          path: openflux
+
+      - name: Set up Go
+        if: inputs.component == 'all' || inputs.component == 'openflux'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: openflux/go.mod
+          cache-dependency-path: openflux/go.sum
+
+      - name: Test and build OpenFlux
+        if: inputs.component == 'all' || inputs.component == 'openflux'
+        working-directory: openflux
+        run: |
+          set -euo pipefail
+          gofmt -w transport/yandex/boards.go transport/yandex/boards_api_test.go
+          git diff --exit-code
+          go test ./transport/yandex ./transport/cupsonline ./transport -count=1
+          mkdir -p ../out
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "../out/openflux-linux-$arch" .
+          done
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags='-s -w' -o ../out/openflux-linux-armv7 .
+
+      - name: Fetch latest WDTT Plus server
+        if: inputs.component == 'all' || inputs.component == 'wdtt'
+        run: |
+          set -euo pipefail
+          mkdir -p out tmp-wdtt
+          url=$(gh api repos/Ivan4537/WDTT-Plus/releases/latest --jq '.assets[] | select(.name | test("WDTT-Plus-server-.*linux-amd64\\.tar\\.gz$")) | .browser_download_url' | head -n1)
+          test -n "$url"
+          curl -fL --retry 5 --retry-all-errors "$url" -o tmp-wdtt/wdtt.tar.gz
+          tar -xzf tmp-wdtt/wdtt.tar.gz -C tmp-wdtt
+          binary=$(find tmp-wdtt -type f -name wdtt-server -print -quit)
+          test -n "$binary"
+          install -m 0755 "$binary" out/wdtt-server-linux-amd64
+
+      - name: Fetch patched CSQTT servers
+        if: inputs.component == 'all' || inputs.component == 'csqtt'
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          for arch in amd64 arm64; do
+            curl -fL --retry 5 --retry-all-errors \
+              "https://github.com/SanityProtocol/swg-panel/releases/download/csqtt-2.1.9-2/server-linux-$arch" \
+              -o "out/csqtt-linux-$arch"
+            chmod 0755 "out/csqtt-linux-$arch"
+          done
+          echo '217623e942adece338827c88d105d5f466afaeb49cb4a35c7716ef23ef1767fa  out/csqtt-linux-amd64' | sha256sum -c -
+          echo '120b77fc5e4e3e1fcf2f80b71e6d3375baf31d12f5153b6adf877ca18011eb0a  out/csqtt-linux-arm64' | sha256sum -c -
+
+      - name: Create checksums
+        run: |
+          set -euo pipefail
+          for asset in out/*; do
+            test -f "$asset" || continue
+            (cd out && sha256sum "$(basename "$asset")" > "$(basename "$asset").sha256")
+          done
+
+      - name: Publish rolling sidecar release
+        run: |
+          set -euo pipefail
+          if ! gh release view sidecars-edge >/dev/null 2>&1; then
+            gh release create sidecars-edge --prerelease --latest=false \
+              --title 'Tunnel sidecars (rolling)' \
+              --notes 'Rolling, independently tested binaries used by x-ui tunnels update. Existing tunnel configuration is preserved.'
+          fi
+          gh release upload sidecars-edge out/* --clobber
+
