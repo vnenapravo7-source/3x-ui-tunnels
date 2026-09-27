@@ -20,11 +20,15 @@ on:
       - "**"
     paths:
       - "install.sh"
+      - "update.sh"
+      - "x-ui.sh"
       - "deploy/**"
       - ".github/workflows/smoke.yml"
   pull_request:
     paths:
       - "install.sh"
+      - "update.sh"
+      - "x-ui.sh"
       - "deploy/**"
       - ".github/workflows/smoke.yml"
   workflow_run:
@@ -51,6 +55,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Validate installer scripts and automatic CSQTT migration
+        run: |
+          bash -n install.sh update.sh x-ui.sh
+          grep -Fq '/usr/bin/x-ui tunnels update csqtt' update.sh
+          grep -Fq '/usr/bin/x-ui tunnels update all' install.sh
       - name: Non-interactive install smoke test
         run: bash deploy/test/smoke-noninteractive.sh
 
