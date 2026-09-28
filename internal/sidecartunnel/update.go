@@ -244,10 +244,10 @@ func UpdateOpenFlux(ctx context.Context) (*OpenFluxUpdateInfo, error) {
 		_ = os.Remove(target)
 		if installed {
 			if rollbackErr := os.Rename(backup, target); rollbackErr != nil {
-				return nil, fmt.Errorf("restart updated OpenFlux: %v; rollback failed: %w", err, rollbackErr)
+				return nil, errors.Join(fmt.Errorf("restart updated OpenFlux: %w", err), fmt.Errorf("rollback failed: %w", rollbackErr))
 			}
 			if rollbackErr := GetManager().RestartProtocol(model.OpenFlux); rollbackErr != nil {
-				return nil, fmt.Errorf("restart updated OpenFlux: %v; old binary restored but restart failed: %w", err, rollbackErr)
+				return nil, errors.Join(fmt.Errorf("restart updated OpenFlux: %w", err), fmt.Errorf("old binary restored but restart failed: %w", rollbackErr))
 			}
 		}
 		if installed {
