@@ -1,6 +1,10 @@
 name: Publish tunnel sidecars
 
 on:
+  schedule:
+    # Keep the panel's update button useful even when the OpenFlux/WDTT
+    # projects publish independently of a 3x-ui release.
+    - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
       component:
@@ -30,7 +34,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout patched OpenFlux
-        if: inputs.component == 'all' || inputs.component == 'openflux'
+        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
         uses: actions/checkout@v4
         with:
           repository: vnenapravo7-source/OpenFlux
@@ -38,14 +42,14 @@ jobs:
           path: openflux
 
       - name: Set up Go
-        if: inputs.component == 'all' || inputs.component == 'openflux'
+        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
         uses: actions/setup-go@v5
         with:
           go-version-file: openflux/go.mod
           cache-dependency-path: openflux/go.sum
 
       - name: Test and build OpenFlux
-        if: inputs.component == 'all' || inputs.component == 'openflux'
+        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
         working-directory: openflux
         run: |
           set -euo pipefail
@@ -59,7 +63,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags='-s -w' -o ../out/openflux-linux-armv7 .
 
       - name: Fetch latest WDTT Plus server
-        if: inputs.component == 'all' || inputs.component == 'wdtt'
+        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'wdtt'
         run: |
           set -euo pipefail
           mkdir -p out tmp-wdtt
@@ -72,7 +76,7 @@ jobs:
           install -m 0755 "$binary" out/wdtt-server-linux-amd64
 
       - name: Fetch patched CSQTT servers
-        if: inputs.component == 'all' || inputs.component == 'csqtt'
+        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'csqtt'
         run: |
           set -euo pipefail
           mkdir -p out

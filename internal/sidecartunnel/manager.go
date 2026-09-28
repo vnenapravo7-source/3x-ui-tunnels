@@ -125,8 +125,12 @@ func GetManager() *Manager { return singleton }
 
 func binaryCandidates(protocol model.Protocol) []string {
 	binDir := config.GetBinFolderPath()
+	openFluxArch := runtime.GOARCH
+	if openFluxArch == "arm" {
+		openFluxArch = "armv7"
+	}
 	names := map[model.Protocol][]string{
-		model.OpenFlux: {fmt.Sprintf("openflux-%s-%s", runtime.GOOS, runtime.GOARCH), "openflux"},
+		model.OpenFlux: {fmt.Sprintf("openflux-%s-%s", runtime.GOOS, openFluxArch), "openflux"},
 		model.WDTT:     {fmt.Sprintf("wdtt-server-%s-%s", runtime.GOOS, runtime.GOARCH), "wdtt-server"},
 		model.CSQTT:    {fmt.Sprintf("csqtt-%s-%s", runtime.GOOS, runtime.GOARCH), "csqtt"},
 	}[protocol]
@@ -720,4 +724,42 @@ func (m *Manager) StopAll() {
 	for _, id := range ids {
 		m.removeLocked(id)
 	}
+}
+
+// RestartProtocol restarts only the managed processes for protocol. It is
+// used after an atomic sidecar-binary update so unrelated tunnels and Xray
+// keep running. Instances that previously exited are retried as well.
+func (m *Manager) RestartProtocol(protocol model.Protocol) error {
+	m.mu.Lock()
+	instances := make([]Instance, 0)
+	for id, proc := range m.procs {
+		if proc.instance.Protocol != protocol {
+			continue
+		}
+		instances = append(instances, proc.instance)
+		m.removeLocked(id)
+	}
+	m.mu.Unlock()
+
+	sort.Slice(instances, func(i, j int) bool { return instances[i].ID < instances[j].ID })
+	var errs []error
+	started := make([]int, 0, len(instances))
+	for _, inst := range instances {
+		if err := m.Ensure(inst); err != nil {
+			errs = append(errs, fmt.Errorf("%s[%d]: %w", protocol, inst.ID, err))
+			continue
+		}
+		started = append(started, inst.ID)
+	}
+	if len(started) > 0 {
+		time.Sleep(750 * time.Millisecond)
+		m.mu.Lock()
+		for _, id := range started {
+			if proc := m.procs[id]; proc == nil || proc.cmd == nil {
+				errs = append(errs, fmt.Errorf("%s[%d]: process exited during startup", protocol, id))
+			}
+		}
+		m.mu.Unlock()
+	}
+	return errors.Join(errs...)
 }
