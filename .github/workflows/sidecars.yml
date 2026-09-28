@@ -33,11 +33,11 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      - name: Checkout patched OpenFlux
+      - name: Checkout latest OpenFlux
         if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
         uses: actions/checkout@v4
         with:
-          repository: vnenapravo7-source/OpenFlux
+          repository: p1neappleXpress/OpenFlux
           ref: main
           path: openflux
 
@@ -53,10 +53,9 @@ jobs:
         working-directory: openflux
         run: |
           set -euo pipefail
-          gofmt -w transport/yandex/boards.go transport/yandex/boards_api_test.go
-          git diff --exit-code
           go test ./transport/yandex ./transport/cupsonline ./transport -count=1
           mkdir -p ../out
+          git rev-parse HEAD > ../out/openflux-upstream-commit.txt
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags='-s -w' -o "../out/openflux-linux-$arch" .
           done
