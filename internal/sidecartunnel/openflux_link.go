@@ -21,7 +21,7 @@ var ErrOpenFluxLinkToolUnavailable = errors.New("OpenFlux canonical link tool is
 func MakeOpenFluxLink(ctx context.Context, configJSON []byte) (string, error) {
 	bin, err := binaryPath(model.OpenFlux)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrOpenFluxLinkToolUnavailable, err)
+		return "", fmt.Errorf("%w: %w", ErrOpenFluxLinkToolUnavailable, err)
 	}
 	cmd := exec.CommandContext(ctx, bin, "--make-link", "-")
 	cmd.Stdin = bytes.NewReader(configJSON)
