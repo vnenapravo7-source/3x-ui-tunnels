@@ -6262,6 +6262,36 @@
         }
       }
     },
+    "/panel/api/server/getOpenFluxUpdateInfo": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Compare the installed OpenFlux server sidecar with the latest checksummed rolling build.",
+        "operationId": "get_panel_api_server_getOpenFluxUpdateInfo",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/server/getUpdateStatus": {
       "get": {
         "tags": [
@@ -6857,6 +6887,36 @@
                   "success": true,
                   "obj": {
                     "runId": "1735689600123456789"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/updateOpenFlux": {
+      "post": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Atomically update the OpenFlux server sidecar, restart only OpenFlux inbounds, and roll back if startup fails.",
+        "operationId": "post_panel_api_server_updateOpenFlux",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
                   }
                 }
               }
