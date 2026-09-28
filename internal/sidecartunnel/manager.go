@@ -405,6 +405,33 @@ func prepareOpenFlux(inst Instance) error {
 	return writePrivate(filepath.Join(stateDir(inst), "secret.key"), []byte(secret+"\n"))
 }
 
+func openFluxContext(explicit string, transports []Transport, cupsCode string) string {
+	if explicit = strings.TrimSpace(explicit); explicit != "" {
+		return explicit
+	}
+	best := -1
+	for i, transport := range transports {
+		url := strings.TrimSpace(transport.URL)
+		if transport.Type == "cupsonline" && url == "" {
+			url = strings.TrimSpace(cupsCode)
+		}
+		if url == "" || url == "http://#" {
+			continue
+		}
+		switch transport.Type {
+		case "cupsonline", "direct", "oneme":
+			continue
+		}
+		if best < 0 || transport.Priority > transports[best].Priority {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return strings.TrimSpace(transports[best].URL)
+	}
+	return ""
+}
+
 func commandFor(inst Instance) (*exec.Cmd, error) {
 	bin, err := binaryPath(inst.Protocol)
 	if err != nil {
@@ -464,7 +491,7 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		if len(inst.Settings.Transports) > 0 {
 			parts := make([]string, 0, len(inst.Settings.Transports))
 			seen := map[string]bool{}
-			contextURL := strings.TrimSpace(inst.Settings.SessionContext)
+			contextURL := openFluxContext(inst.Settings.SessionContext, inst.Settings.Transports, inst.Settings.CupsCode)
 			for _, transport := range inst.Settings.Transports {
 				if seen[transport.Type] {
 					return nil, fmt.Errorf("duplicate OpenFlux transport %s is not supported by the lightweight runner", transport.Type)
@@ -478,27 +505,16 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 				if url != "" && len(inst.Settings.Transports) > 1 {
 					args = append(args, "--"+transport.Type+"-url="+url)
 				}
-				if contextURL == "" && transport.Type == "yandex" && url != "" {
-					contextURL = url
-				}
-			}
-			if contextURL == "" {
-				for _, transport := range inst.Settings.Transports {
-					url := strings.TrimSpace(transport.URL)
-					if transport.Type == "cupsonline" && url == "" {
-						url = inst.Settings.CupsCode
-					}
-					if url != "" {
-						contextURL = url
-						break
-					}
-				}
 			}
 			if len(inst.Settings.Transports) == 1 {
 				transport := inst.Settings.Transports[0]
 				args = append(args, "--transport="+transport.Type)
-				if transport.Type == "cupsonline" && inst.Settings.CupsCode != "" {
-					contextURL = inst.Settings.CupsCode
+				transportURL := strings.TrimSpace(transport.URL)
+				if transport.Type == "cupsonline" && transportURL == "" {
+					transportURL = strings.TrimSpace(inst.Settings.CupsCode)
+				}
+				if transport.Type != "direct" && transportURL != "" {
+					args = append(args, "--url="+transportURL)
 				}
 				if (inst.Settings.Negotiate || transport.Type == "direct") && transport.Type != "cupsonline" {
 					args = append(args, "--negotiate")
@@ -507,7 +523,7 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 				args = append(args, "--transports="+strings.Join(parts, ","), "--negotiate")
 			}
 			if contextURL != "" {
-				args = append(args, "--url="+contextURL)
+				args = append(args, "--session-context="+contextURL)
 			}
 			if seen["direct"] {
 				args = append(args, fmt.Sprintf("--direct-listen=%s:%d", listen, inst.Port))

@@ -102,7 +102,7 @@ func TestGetSubsIncludesManagedSidecarLinks(t *testing.T) {
 	}
 }
 
-func TestOpenFluxMultiShareDerivesSameYandexContextAsRunner(t *testing.T) {
+func TestOpenFluxMultiShareDerivesHighestPriorityDocumentContext(t *testing.T) {
 	const key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	const yandexURL = "https://disk.yandex.ru/i/shared-doc"
 	svc := NewSubService("")
@@ -112,7 +112,7 @@ func TestOpenFluxMultiShareDerivesSameYandexContextAsRunner(t *testing.T) {
 	svc.settingsByInbound = map[int]map[string]any{}
 	inbound := &model.Inbound{
 		Id: 99, Remark: "multi", Port: 443, Protocol: model.OpenFlux,
-		Settings: `{"codec":"batched","negotiate":true,"transports":[{"type":"mailru","url":"https://cloud.mail.ru/public/x"},{"type":"yandex","url":"` + yandexURL + `"}]}`,
+		Settings: `{"codec":"batched","negotiate":true,"transports":[{"type":"mailru","url":"https://cloud.mail.ru/public/x","priority":25},{"type":"yandex","url":"` + yandexURL + `","priority":75}]}`,
 	}
 	svc.primeLinkClients(inbound.Id, []model.Client{{Email: "alice", Password: key}}, true)
 	payload := decodeOpenFluxShareForTest(t, svc.genSidecarTunnelLink(inbound, "alice"))
