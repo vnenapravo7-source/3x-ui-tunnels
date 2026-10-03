@@ -6,14 +6,6 @@ on:
     tags:
       - "fork-v*"
 
-# Xray v26.9.9 deliberately rejects older/third-party REALITY ClientHello
-# implementations that do not advertise X25519MLKEM768 in the expected order.
-# That breaks otherwise valid profiles in sing-box based clients and older
-# Xray clients (including current MCRF/HApp builds), while Mihomo/steer still
-# works. Keep the panel current but ship the last broadly compatible core.
-env:
-  XRAY_VERSION: "26.7.28"
-
 jobs:
   build:
     permissions:
@@ -109,7 +101,7 @@ jobs:
           cd x-ui/bin
 
           # Download dependencies
-          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/"
+          Xray_URL="https://github.com/XTLS/Xray-core/releases/download/v26.9.9/"
           if [ "${{ matrix.platform }}" == "amd64" ]; then
             fetch ${Xray_URL}Xray-linux-64.zip
             unzip Xray-linux-64.zip
@@ -139,9 +131,6 @@ jobs:
             unzip Xray-linux-s390x.zip
             rm -f Xray-linux-s390x.zip
           fi
-          ./xray version | tee xray-version.txt
-          grep -F "Xray ${XRAY_VERSION}" xray-version.txt
-          rm -f xray-version.txt
           rm -f geoip.dat geosite.dat
           fetch https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
           fetch https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
@@ -296,14 +285,10 @@ jobs:
           cd x-ui\bin
 
           # Download Xray for Windows
-          $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v$env:XRAY_VERSION/"
+          $Xray_URL = "https://github.com/XTLS/Xray-core/releases/download/v26.9.9/"
           Invoke-WebRequest @retry -Uri "${Xray_URL}Xray-windows-64.zip" -OutFile "Xray-windows-64.zip"
           Expand-Archive -Path "Xray-windows-64.zip" -DestinationPath .
           Remove-Item "Xray-windows-64.zip"
-          $actualXrayVersion = (& .\xray.exe version | Select-Object -First 1)
-          if ($actualXrayVersion -notmatch [regex]::Escape("Xray $env:XRAY_VERSION")) {
-            throw "Unexpected bundled Xray version: $actualXrayVersion"
-          }
           Remove-Item geoip.dat, geosite.dat -ErrorAction SilentlyContinue
           Invoke-WebRequest @retry -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -OutFile "geoip.dat"
           Invoke-WebRequest @retry -Uri "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -OutFile "geosite.dat"
