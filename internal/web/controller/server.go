@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/sidecartunnel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
@@ -51,6 +53,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/xrayObservatoryHistory/:tag/:bucket", a.getXrayObservatoryHistoryBucket)
 	g.GET("/getXrayVersion", a.getXrayVersion)
 	g.GET("/getPanelUpdateInfo", a.getPanelUpdateInfo)
+	g.GET("/getOpenFluxUpdateInfo", a.getOpenFluxUpdateInfo)
 	g.GET("/getUpdateStatus", a.getUpdateStatus)
 	g.GET("/getConfigJson", a.getConfigJson)
 	g.GET("/getDb", a.getDb)
@@ -69,6 +72,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/restartXrayService", a.restartXrayService)
 	g.POST("/installXray/:version", a.installXray)
 	g.POST("/updatePanel", a.updatePanel)
+	g.POST("/updateOpenFlux", a.updateOpenFlux)
 	g.POST("/setUpdateChannel", a.setUpdateChannel)
 	g.POST("/updateGeofile", a.updateGeofile)
 	g.POST("/updateGeofile/:fileName", a.updateGeofile)
@@ -200,6 +204,27 @@ func (a *ServerController) getPanelUpdateInfo(c *gin.Context) {
 		return
 	}
 	jsonObj(c, info, nil)
+}
+
+func (a *ServerController) getOpenFluxUpdateInfo(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+	defer cancel()
+	info, err := sidecartunnel.GetOpenFluxUpdateInfo(ctx)
+	if err != nil {
+		logger.Debug("OpenFlux update check failed:", err)
+		jsonMsg(c, "OpenFlux update check failed", err)
+		return
+	}
+	jsonObj(c, info, nil)
+}
+
+func (a *ServerController) updateOpenFlux(c *gin.Context) {
+	// Do not bind the download to a browser disconnect: once an atomic binary
+	// replacement starts it must either finish or roll back cleanly.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	info, err := sidecartunnel.UpdateOpenFlux(ctx)
+	jsonMsgObj(c, "OpenFlux server updated", info, err)
 }
 
 // installXray installs or updates Xray to the specified version.

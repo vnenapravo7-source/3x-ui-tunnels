@@ -18,6 +18,7 @@ interface SubPageData {
   subSupportUrl?: string;
   subUpdates?: number;
   links?: string[];
+  linkNames?: string[];
   emails?: string[];
   datepicker?: 'gregorian' | 'jalalian';
   announce?: string;

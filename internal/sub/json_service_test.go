@@ -398,6 +398,29 @@ func TestSubJsonServiceRealityDataDerivesPerClientSpiderX(t *testing.T) {
 	}
 }
 
+func TestSubJsonServiceRealityIdentityIsStableAndUsesTarget(t *testing.T) {
+	svc := NewSubJsonService("", "", "", "", nil)
+	streamJSON := `{
+		"network":"tcp","security":"reality",
+		"realitySettings":{
+			"target":"www.example.com:443",
+			"serverNames":["alternate.example.com","www.example.com"],
+			"shortIds":["ab12","cd34"],
+			"settings":{"publicKey":"PBKvalue","fingerprint":"chrome"}
+		}
+	}`
+	for i := 0; i < 2; i++ {
+		stream := svc.streamData(streamJSON, "client")
+		reality, _ := stream["realitySettings"].(map[string]any)
+		if got := reality["serverName"]; got != "www.example.com" {
+			t.Fatalf("serverName = %v, want target hostname", got)
+		}
+		if got := reality["shortId"]; got != "ab12" {
+			t.Fatalf("shortId = %v, want stable first short id", got)
+		}
+	}
+}
+
 // streamData must tolerate malformed stored inbounds: unparseable stream JSON
 // (with a finalMask configured, which writes into the map) and tls/reality
 // security whose settings key is missing or null previously panicked the

@@ -87,6 +87,34 @@ func TestGenVlessLink_RealityParamsMapped(t *testing.T) {
 	}
 }
 
+func TestGenVlessLink_RealityUsesStableTargetIdentity(t *testing.T) {
+	stream := `{
+		"network":"tcp","security":"reality",
+		"tcpSettings":{"header":{"type":"none"}},
+		"realitySettings":{
+			"target":"www.example.com:443",
+			"serverNames":["alternate.example.com","www.example.com"],
+			"shortIds":["ab12","cd34"],
+			"settings":{"publicKey":"PBKvalue","fingerprint":"chrome"}
+		}
+	}`
+	s := &SubService{}
+	first := s.genVlessLink(shareLinkInbound(stream), "user")
+	second := s.genVlessLink(shareLinkInbound(stream), "user")
+	for _, link := range []string{first, second} {
+		u, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("parse link: %v", err)
+		}
+		if got := u.Query().Get("sni"); got != "www.example.com" {
+			t.Fatalf("sni = %q, want target hostname", got)
+		}
+		if got := u.Query().Get("sid"); got != "ab12" {
+			t.Fatalf("sid = %q, want stable first short id", got)
+		}
+	}
+}
+
 // realityTwoClientInbound builds a reality VLESS inbound carrying two clients
 // with distinct subIds so the per-client spx derivation can be exercised.
 func realityTwoClientInbound() *model.Inbound {

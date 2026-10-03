@@ -1,6 +1,10 @@
 package sub
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/base64"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,6 +37,29 @@ func TestBuildPageData_SplitsMultiHostLinks(t *testing.T) {
 	wantEmails := []string{"john@x", "john@x", "john@x", "alice@x"}
 	if !reflect.DeepEqual(page.Emails, wantEmails) {
 		t.Fatalf("Emails = %v, want %v", page.Emails, wantEmails)
+	}
+}
+
+func TestBuildPageData_ProvidesManagedSidecarInboundNames(t *testing.T) {
+	var packed bytes.Buffer
+	w, err := flate.NewWriter(&packed, flate.BestCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"name": "openflux-office", "transports": []any{}})
+	_, _ = w.Write(raw)
+	_ = w.Close()
+	openflux := "openflux://v1/" + base64.RawURLEncoding.EncodeToString(packed.Bytes())
+
+	links := []string{
+		"wdtt://connect?v=1&name=wdtt-office",
+		"csqtt://connect?v=2&name=csqtt-office",
+		openflux,
+	}
+	page := (&SubService{}).BuildPageData("s1", "", xray.ClientTraffic{}, 0, links, nil, "", "", "", "/", "", "")
+	want := []string{"wdtt-office", "csqtt-office", "openflux-office"}
+	if !reflect.DeepEqual(page.LinkNames, want) {
+		t.Fatalf("LinkNames = %v, want %v", page.LinkNames, want)
 	}
 }
 

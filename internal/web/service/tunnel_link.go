@@ -3,16 +3,20 @@ package service
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/sidecartunnel"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 )
 
@@ -51,6 +55,31 @@ type openFluxShare struct {
 	Secret     string                `json:"secret,omitempty"`
 	Context    string                `json:"context,omitempty"`
 	Transports []TunnelLinkTransport `json:"transports"`
+}
+
+const openFluxContextPlaceholder = "http://#"
+
+func canonicalOpenFluxContext(explicit string, transports []TunnelLinkTransport) string {
+	if explicit = strings.TrimSpace(explicit); explicit != "" {
+		return explicit
+	}
+	best := -1
+	for i, transport := range transports {
+		if transport.URL == "" || transport.URL == openFluxContextPlaceholder {
+			continue
+		}
+		switch transport.Type {
+		case "cupsonline", "direct", "oneme":
+			continue
+		}
+		if best < 0 || transport.Priority > transports[best].Priority {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return transports[best].URL
+	}
+	return openFluxContextPlaceholder
 }
 
 var tunnelDNSName = regexp.MustCompile(`(?i)^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
@@ -148,6 +177,9 @@ func buildCSQTTLink(req TunnelLinkRequest) (string, error) {
 	q.Set("host", host)
 	q.Set("peer", strconv.Itoa(req.PeerPort))
 	q.Set("password", req.Password)
+	if name := strings.TrimSpace(req.Name); name != "" {
+		q.Set("name", name)
+	}
 	if hashes := cleanTunnelHashes(req.Hashes, 6); len(hashes) > 0 {
 		// CSQTT assigns a literal '+' as the separator. Values.Encode would
 		// escape it as %2B, so append the already escaped individual hashes.
@@ -189,6 +221,9 @@ func buildOpenFluxLink(req TunnelLinkRequest) (string, error) {
 		item.Name = strings.TrimSpace(item.Name)
 		item.URL = strings.TrimSpace(item.URL)
 		item.Dial = strings.TrimSpace(item.Dial)
+		if item.Name == item.Type {
+			item.Name = ""
+		}
 		if !allowed[item.Type] {
 			return "", common.NewError("unsupported OpenFlux transport: " + item.Type)
 		}
@@ -215,11 +250,20 @@ func buildOpenFluxLink(req TunnelLinkRequest) (string, error) {
 		}
 		transports = append(transports, item)
 	}
+	if len(transports) == 1 {
+		transports[0].Priority = 0
+	}
+	contextValue := strings.TrimSpace(req.Context)
+	if secret == "" {
+		contextValue = ""
+	} else if contextValue == "" {
+		contextValue = canonicalOpenFluxContext("", transports)
+	}
 	share := openFluxShare{
 		Name:       strings.TrimSpace(req.Name),
 		Negotiate:  req.Negotiate,
 		Secret:     secret,
-		Context:    strings.TrimSpace(req.Context),
+		Context:    contextValue,
 		Transports: transports,
 	}
 	if codec != "batched" {
@@ -229,6 +273,15 @@ func buildOpenFluxLink(req TunnelLinkRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if link, coreErr := sidecartunnel.MakeOpenFluxLink(ctx, raw); coreErr == nil {
+		return link, nil
+	} else if !errors.Is(coreErr, sidecartunnel.ErrOpenFluxLinkToolUnavailable) {
+		return "", coreErr
+	}
+	// Development/tests may not have a sidecar installed. Keep an exact v0.2
+	// encoder fallback so those environments still produce canonical links.
 	var packed bytes.Buffer
 	w, err := flate.NewWriter(&packed, flate.BestCompression)
 	if err != nil {

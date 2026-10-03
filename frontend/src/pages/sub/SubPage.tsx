@@ -32,6 +32,7 @@ const subSupportUrl = subData.subSupportUrl || '';
 const updateHours = Number(subData.subUpdates || 0);
 const announce = subData.announce || '';
 const links: string[] = Array.isArray(subData.links) ? subData.links : [];
+const linkNames: string[] = Array.isArray(subData.linkNames) ? subData.linkNames : [];
 const linkEmails: string[] = Array.isArray(subData.emails) ? subData.emails : [];
 const totalByte = Number(subData.totalByte || 0);
 const usedByte =
@@ -139,7 +140,7 @@ export default function SubPage() {
             <span className="sub-tab-count">{links.length}</span>
           </>
         ),
-        children: <SubConfigsTab links={links} onCopy={copy} />,
+        children: <SubConfigsTab links={links} linkNames={linkNames} onCopy={copy} />,
       });
     }
     return items;

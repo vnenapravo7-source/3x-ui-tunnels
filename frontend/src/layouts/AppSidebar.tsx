@@ -9,6 +9,7 @@ import {
   ApartmentOutlined,
   CloseOutlined,
   CloudServerOutlined,
+  CloudSyncOutlined,
   ClusterOutlined,
   CodeOutlined,
   DashboardOutlined,
@@ -43,6 +44,8 @@ import { useAllSettings } from '@/api/queries/useAllSettings';
 import { useCommandPalette } from '@/components/command-palette/useCommandPalette';
 import PanelUpdateModal from '@/pages/index/PanelUpdateModal';
 import type { PanelUpdateInfo } from '@/pages/index/PanelUpdateModal';
+import OpenFluxUpdateModal from '@/pages/index/OpenFluxUpdateModal';
+import type { OpenFluxUpdateInfo } from '@/pages/index/OpenFluxUpdateModal';
 import './AppSidebar.css';
 
 // The palette listens for Ctrl as well as Cmd, so the chip must not show a
@@ -126,6 +129,30 @@ function VersionBadge({
   );
 }
 
+function OpenFluxVersionBadge({
+  version,
+  collapsed,
+  onCheck,
+}: {
+  version: string;
+  collapsed?: boolean;
+  onCheck: () => void;
+}) {
+  const label = version ? `OpenFlux ${version}` : 'OpenFlux —';
+  return (
+    <button
+      type="button"
+      className="sider-version"
+      aria-label={`Проверить обновление серверной части ${label}`}
+      title={`Проверить обновление серверной части ${label}`}
+      onClick={onCheck}
+    >
+      <CloudSyncOutlined />
+      {!collapsed && <span className="sider-version-text">{label}</span>}
+    </button>
+  );
+}
+
 function ThemeCycleButton({
   id,
   isDark,
@@ -189,6 +216,13 @@ export default function AppSidebar() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [autoPrompt, setAutoPrompt] = useState(false);
   const [updateBusy, setUpdateBusy] = useState(false);
+  const [openFluxInfo, setOpenFluxInfo] = useState<OpenFluxUpdateInfo>({
+    currentVersion: '',
+    latestVersion: '',
+    updateAvailable: false,
+    installed: false,
+  });
+  const [openFluxUpdateOpen, setOpenFluxUpdateOpen] = useState(false);
   const updateCheckStarted = useRef(false);
   const railCollapsed = !hovered && !pinned;
   const railStyle = useMemo(
@@ -242,6 +276,21 @@ export default function AppSidebar() {
     }
   }, []);
 
+  const checkOpenFluxRelease = useCallback(async (manual = false) => {
+    try {
+      const msg = await HttpUtil.get<OpenFluxUpdateInfo>(
+        '/panel/api/server/getOpenFluxUpdateInfo',
+        undefined,
+        { silent: !manual },
+      );
+      if (!msg?.success || !msg.obj) return;
+      setOpenFluxInfo(msg.obj);
+      if (manual) setOpenFluxUpdateOpen(true);
+    } catch {
+      /* A transient release check must not break navigation. */
+    }
+  }, []);
+
   useEffect(() => {
     if (updateCheckStarted.current) return;
     updateCheckStarted.current = true;
@@ -256,6 +305,11 @@ export default function AppSidebar() {
       updateCheckStarted.current = false;
     };
   }, [checkForkRelease]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void checkOpenFluxRelease(), 250);
+    return () => window.clearTimeout(timer);
+  }, [checkOpenFluxRelease]);
 
   const currentTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
   const panelVersion = updateInfo.currentVersion;
@@ -490,6 +544,11 @@ export default function AppSidebar() {
           onClick={onMenuClick}
         />
         <div className="sider-footer">
+          <OpenFluxVersionBadge
+            version={openFluxInfo.currentVersion}
+            collapsed={railCollapsed}
+            onCheck={() => void checkOpenFluxRelease(true)}
+          />
           <VersionBadge
             version={panelVersion}
             collapsed={railCollapsed}
@@ -578,6 +637,10 @@ export default function AppSidebar() {
           }}
         />
         <div className="drawer-footer">
+          <OpenFluxVersionBadge
+            version={openFluxInfo.currentVersion}
+            onCheck={() => void checkOpenFluxRelease(true)}
+          />
           <VersionBadge version={panelVersion} onCheck={() => void checkForkRelease(true)} />
         </div>
       </Drawer>
@@ -606,6 +669,13 @@ export default function AppSidebar() {
           } catch {}
           setUpdateOpen(false);
         }}
+      />
+      <OpenFluxUpdateModal
+        open={openFluxUpdateOpen}
+        info={openFluxInfo}
+        onClose={() => setOpenFluxUpdateOpen(false)}
+        onCheck={() => checkOpenFluxRelease(true)}
+        onUpdated={(info) => setOpenFluxInfo(info)}
       />
       <Spin spinning={updateBusy} fullscreen tip="Обновление панели…" />
     </div>

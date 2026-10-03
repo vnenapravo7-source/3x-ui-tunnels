@@ -249,7 +249,7 @@ ensure_tunnel_host_tools() {
 }
 
 install_tunnel_binary() {
-    local kind="$1" machine arch openflux_arch url tmpdir asset expected_hash actual_hash
+    local kind="$1" machine arch url tmpdir asset checksum
     if [[ "$kind" == "wdtt" || "$kind" == "csqtt" ]]; then
         ensure_tunnel_host_tools || return 1
     fi
@@ -260,45 +260,40 @@ install_tunnel_binary() {
         armv7l | armv7 | armhf) arch="armv7" ;;
         *) LOGE "Unsupported architecture for tunnel sidecars: ${machine}"; return 1 ;;
     esac
-    openflux_arch="$arch"
-    [[ "$arch" == "armv7" ]] && openflux_arch="arm"
     tmpdir="$(mktemp -d)" || return 1
     command install -d -m 0755 "${xui_folder}/bin" || { rm -rf "$tmpdir"; return 1; }
 
     case "$kind" in
         openflux)
-            url="$(tunnel_asset_url 'p1neappleXpress/OpenFlux' "openflux-linux-${openflux_arch}$")"
-            [[ -n "$url" ]] || { LOGE 'OpenFlux Linux asset was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/openflux" || { rm -rf "$tmpdir"; return 1; }
-            command install -m 0755 "$tmpdir/openflux" "${xui_folder}/bin/openflux-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
+            asset="openflux-linux-${arch}"
             ;;
         wdtt)
             [[ "$arch" == "amd64" ]] || { LOGE 'WDTT Plus standalone installer currently supports amd64 only.'; rm -rf "$tmpdir"; return 1; }
-            url="$(tunnel_asset_url 'Ivan4537/WDTT-Plus' 'WDTT-Plus-server-.*linux-amd64\.tar\.gz$')"
-            [[ -n "$url" ]] || { LOGE 'WDTT Plus server bundle was not found in the latest release.'; rm -rf "$tmpdir"; return 1; }
-            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/wdtt.tar.gz" || { rm -rf "$tmpdir"; return 1; }
-            tar -xzf "$tmpdir/wdtt.tar.gz" -C "$tmpdir" || { rm -rf "$tmpdir"; return 1; }
-            asset="$(find "$tmpdir" -type f -name wdtt-server -print -quit)"
-            [[ -n "$asset" ]] || { LOGE 'wdtt-server is missing from the release bundle.'; rm -rf "$tmpdir"; return 1; }
-            command install -m 0755 "$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
+            asset="wdtt-server-linux-${arch}"
             ;;
         csqtt)
             case "$arch" in
-                amd64) expected_hash='217623e942adece338827c88d105d5f466afaeb49cb4a35c7716ef23ef1767fa' ;;
-                arm64) expected_hash='120b77fc5e4e3e1fcf2f80b71e6d3375baf31d12f5153b6adf877ca18011eb0a' ;;
+                amd64 | arm64) ;;
                 *) LOGE 'The multi-instance CSQTT server supports amd64 and arm64 only.'; rm -rf "$tmpdir"; return 1 ;;
             esac
-            # Pinned amurcanov/csqtt 2.1.9 build with configurable TUN name/subnet.
-            # The checksum is from SanityProtocol/swg-panel release csqtt-2.1.9-2.
-            url="https://github.com/SanityProtocol/swg-panel/releases/download/csqtt-2.1.9-2/server-linux-${arch}"
-            curl -fL --retry 3 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/csqtt" || { rm -rf "$tmpdir"; return 1; }
-            actual_hash="$(sha256sum "$tmpdir/csqtt" | awk '{print $1}')"
-            [[ "$actual_hash" == "$expected_hash" ]] || { LOGE 'CSQTT asset checksum mismatch; installation aborted.'; rm -rf "$tmpdir"; return 1; }
-            command install -m 0755 "$tmpdir/csqtt" "${xui_folder}/bin/.csqtt-linux-${arch}.$$" || { rm -rf "$tmpdir"; return 1; }
-            mv -f "${xui_folder}/bin/.csqtt-linux-${arch}.$$" "${xui_folder}/bin/csqtt-linux-${arch}" || { rm -rf "$tmpdir"; return 1; }
+            asset="csqtt-linux-${arch}"
             ;;
         *) LOGE 'Usage: x-ui tunnels install openflux|wdtt|csqtt|all'; rm -rf "$tmpdir"; return 1 ;;
     esac
+
+    url="https://github.com/vnenapravo7-source/3x-ui-tunnels/releases/download/sidecars-edge/${asset}"
+    checksum="${asset}.sha256"
+    curl -fL --retry 5 --retry-delay 1 --retry-all-errors "$url" -o "$tmpdir/$asset" || { rm -rf "$tmpdir"; return 1; }
+    curl -fL --retry 5 --retry-delay 1 --retry-all-errors "${url}.sha256" -o "$tmpdir/$checksum" || { rm -rf "$tmpdir"; return 1; }
+    (cd "$tmpdir" && sha256sum -c "$checksum") || { LOGE "${kind} asset checksum mismatch; installation aborted."; rm -rf "$tmpdir"; return 1; }
+    case "$kind" in
+        openflux) command install -m 0755 "$tmpdir/$asset" "${xui_folder}/bin/openflux-linux-${arch}" ;;
+        wdtt) command install -m 0755 "$tmpdir/$asset" "${xui_folder}/bin/wdtt-server-linux-${arch}" ;;
+        csqtt)
+            command install -m 0755 "$tmpdir/$asset" "${xui_folder}/bin/.csqtt-linux-${arch}.$$" &&
+                mv -f "${xui_folder}/bin/.csqtt-linux-${arch}.$$" "${xui_folder}/bin/csqtt-linux-${arch}"
+            ;;
+    esac || { rm -rf "$tmpdir"; return 1; }
     rm -rf "$tmpdir"
     LOGI "${kind} server binary installed."
 }

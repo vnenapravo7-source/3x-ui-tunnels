@@ -125,8 +125,12 @@ func GetManager() *Manager { return singleton }
 
 func binaryCandidates(protocol model.Protocol) []string {
 	binDir := config.GetBinFolderPath()
+	openFluxArch := runtime.GOARCH
+	if openFluxArch == "arm" {
+		openFluxArch = "armv7"
+	}
 	names := map[model.Protocol][]string{
-		model.OpenFlux: {fmt.Sprintf("openflux-%s-%s", runtime.GOOS, runtime.GOARCH), "openflux"},
+		model.OpenFlux: {fmt.Sprintf("openflux-%s-%s", runtime.GOOS, openFluxArch), "openflux"},
 		model.WDTT:     {fmt.Sprintf("wdtt-server-%s-%s", runtime.GOOS, runtime.GOARCH), "wdtt-server"},
 		model.CSQTT:    {fmt.Sprintf("csqtt-%s-%s", runtime.GOOS, runtime.GOARCH), "csqtt"},
 	}[protocol]
@@ -401,6 +405,33 @@ func prepareOpenFlux(inst Instance) error {
 	return writePrivate(filepath.Join(stateDir(inst), "secret.key"), []byte(secret+"\n"))
 }
 
+func openFluxContext(explicit string, transports []Transport, cupsCode string) string {
+	if explicit = strings.TrimSpace(explicit); explicit != "" {
+		return explicit
+	}
+	best := -1
+	for i, transport := range transports {
+		url := strings.TrimSpace(transport.URL)
+		if transport.Type == "cupsonline" && url == "" {
+			url = strings.TrimSpace(cupsCode)
+		}
+		if url == "" || url == "http://#" {
+			continue
+		}
+		switch transport.Type {
+		case "cupsonline", "direct", "oneme":
+			continue
+		}
+		if best < 0 || transport.Priority > transports[best].Priority {
+			best = i
+		}
+	}
+	if best >= 0 {
+		return strings.TrimSpace(transports[best].URL)
+	}
+	return ""
+}
+
 func commandFor(inst Instance) (*exec.Cmd, error) {
 	bin, err := binaryPath(inst.Protocol)
 	if err != nil {
@@ -460,7 +491,7 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 		if len(inst.Settings.Transports) > 0 {
 			parts := make([]string, 0, len(inst.Settings.Transports))
 			seen := map[string]bool{}
-			contextURL := strings.TrimSpace(inst.Settings.SessionContext)
+			contextURL := openFluxContext(inst.Settings.SessionContext, inst.Settings.Transports, inst.Settings.CupsCode)
 			for _, transport := range inst.Settings.Transports {
 				if seen[transport.Type] {
 					return nil, fmt.Errorf("duplicate OpenFlux transport %s is not supported by the lightweight runner", transport.Type)
@@ -474,27 +505,16 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 				if url != "" && len(inst.Settings.Transports) > 1 {
 					args = append(args, "--"+transport.Type+"-url="+url)
 				}
-				if contextURL == "" && transport.Type == "yandex" && url != "" {
-					contextURL = url
-				}
-			}
-			if contextURL == "" {
-				for _, transport := range inst.Settings.Transports {
-					url := strings.TrimSpace(transport.URL)
-					if transport.Type == "cupsonline" && url == "" {
-						url = inst.Settings.CupsCode
-					}
-					if url != "" {
-						contextURL = url
-						break
-					}
-				}
 			}
 			if len(inst.Settings.Transports) == 1 {
 				transport := inst.Settings.Transports[0]
 				args = append(args, "--transport="+transport.Type)
-				if transport.Type == "cupsonline" && inst.Settings.CupsCode != "" {
-					contextURL = inst.Settings.CupsCode
+				transportURL := strings.TrimSpace(transport.URL)
+				if transport.Type == "cupsonline" && transportURL == "" {
+					transportURL = strings.TrimSpace(inst.Settings.CupsCode)
+				}
+				if transport.Type != "direct" && transportURL != "" {
+					args = append(args, "--url="+transportURL)
 				}
 				if (inst.Settings.Negotiate || transport.Type == "direct") && transport.Type != "cupsonline" {
 					args = append(args, "--negotiate")
@@ -503,7 +523,7 @@ func commandFor(inst Instance) (*exec.Cmd, error) {
 				args = append(args, "--transports="+strings.Join(parts, ","), "--negotiate")
 			}
 			if contextURL != "" {
-				args = append(args, "--url="+contextURL)
+				args = append(args, "--session-context="+contextURL)
 			}
 			if seen["direct"] {
 				args = append(args, fmt.Sprintf("--direct-listen=%s:%d", listen, inst.Port))
@@ -720,4 +740,42 @@ func (m *Manager) StopAll() {
 	for _, id := range ids {
 		m.removeLocked(id)
 	}
+}
+
+// RestartProtocol restarts only the managed processes for protocol. It is
+// used after an atomic sidecar-binary update so unrelated tunnels and Xray
+// keep running. Instances that previously exited are retried as well.
+func (m *Manager) RestartProtocol(protocol model.Protocol) error {
+	m.mu.Lock()
+	instances := make([]Instance, 0)
+	for id, proc := range m.procs {
+		if proc.instance.Protocol != protocol {
+			continue
+		}
+		instances = append(instances, proc.instance)
+		m.removeLocked(id)
+	}
+	m.mu.Unlock()
+
+	sort.Slice(instances, func(i, j int) bool { return instances[i].ID < instances[j].ID })
+	var errs []error
+	started := make([]int, 0, len(instances))
+	for _, inst := range instances {
+		if err := m.Ensure(inst); err != nil {
+			errs = append(errs, fmt.Errorf("%s[%d]: %w", protocol, inst.ID, err))
+			continue
+		}
+		started = append(started, inst.ID)
+	}
+	if len(started) > 0 {
+		time.Sleep(750 * time.Millisecond)
+		m.mu.Lock()
+		for _, id := range started {
+			if proc := m.procs[id]; proc == nil || proc.cmd == nil {
+				errs = append(errs, fmt.Errorf("%s[%d]: process exited during startup", protocol, id))
+			}
+		}
+		m.mu.Unlock()
+	}
+	return errors.Join(errs...)
 }

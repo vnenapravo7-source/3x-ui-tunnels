@@ -99,6 +99,23 @@ func TestValidCupsCode(t *testing.T) {
 	}
 }
 
+func TestOpenFluxContextMatchesCorePriorityRule(t *testing.T) {
+	transports := []Transport{
+		{Type: "mailru", URL: "https://cloud.mail.ru/public/first", Priority: 25},
+		{Type: "yandex", URL: "https://docs.yandex.ru/edit/d/high", Priority: 75},
+		{Type: "direct", URL: "203.0.113.7:443", Priority: 100},
+	}
+	if got := openFluxContext("", transports, ""); got != transports[1].URL {
+		t.Fatalf("context = %q, want highest-priority document URL", got)
+	}
+	if got := openFluxContext("explicit", transports, ""); got != "explicit" {
+		t.Fatalf("explicit context = %q", got)
+	}
+	if got := openFluxContext("", []Transport{{Type: "cupsonline"}}, "rooms"); got != "" {
+		t.Fatalf("Cups room list must not become context, got %q", got)
+	}
+}
+
 func TestEnsureWDTTKeysAreValidAndStable(t *testing.T) {
 	dir := t.TempDir()
 	if err := ensureWDTTKeys(dir); err != nil {

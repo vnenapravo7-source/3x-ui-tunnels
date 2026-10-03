@@ -1833,26 +1833,23 @@ install_x-ui() {
     # works out of the box (no-op when XUI_ENABLE_FAIL2BAN=false). Never fatal.
     setup_fail2ban
 
-    # A fresh installation gets every supported sidecar. Reinstalling over an
-    # existing panel preserves working OpenFlux/WDTT binaries so imported links
-    # keep the same wire protocol; only CSQTT is migrated to the pinned build.
-    if [[ "${had_existing_xui}" -eq 0 ]]; then
-        if ! /usr/bin/x-ui tunnels update all; then
-            echo -e "${yellow}Some optional tunnel components could not be installed on this architecture.${plain}"
-            echo -e "${yellow}Run 'x-ui tunnels status' and retry with 'x-ui tunnels update all'.${plain}"
-        fi
+    # The full panel archive and tunnel sidecars have independent release
+    # cadences. Always refresh the small control script first, then install the
+    # rolling, checksummed sidecar builds. Database settings and imported links
+    # are not changed when their executables are replaced.
+    xui_script_tmp="$(mktemp)"
+    if curl -fL --retry 5 --retry-all-errors \
+        "https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/x-ui.sh" \
+        -o "${xui_script_tmp}"; then
+        install -m 0755 "${xui_script_tmp}" /usr/bin/x-ui
+        install -m 0755 "${xui_script_tmp}" "${xui_folder}/x-ui.sh"
     else
-        /usr/bin/x-ui tunnels update csqtt || echo -e "${yellow}CSQTT automatic migration failed; run 'x-ui tunnels update csqtt'.${plain}"
-        case "$(uname -m)" in
-            x86_64 | amd64) tunnel_arch="amd64" ;;
-            aarch64 | arm64) tunnel_arch="arm64" ;;
-            armv7l | armv7 | armhf) tunnel_arch="armv7" ;;
-            *) tunnel_arch="$(uname -m)" ;;
-        esac
-        [[ -x "${xui_folder}/bin/openflux-linux-${tunnel_arch}" ]] || /usr/bin/x-ui tunnels install openflux || true
-        if [[ "${tunnel_arch}" == "amd64" && ! -x "${xui_folder}/bin/wdtt-server-linux-amd64" ]]; then
-            /usr/bin/x-ui tunnels install wdtt || true
-        fi
+        echo -e "${yellow}Could not refresh the fork control script; keeping the installed copy.${plain}"
+    fi
+    rm -f "${xui_script_tmp}"
+    if ! /usr/bin/x-ui tunnels update all; then
+        echo -e "${yellow}Some optional tunnel components could not be installed on this architecture.${plain}"
+        echo -e "${yellow}Run 'x-ui tunnels status' and retry with 'x-ui tunnels update all'.${plain}"
     fi
     /usr/bin/x-ui tunnels status || true
 

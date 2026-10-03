@@ -1,10 +1,13 @@
 package sub
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"maps"
 	"net"
 	"net/url"
@@ -903,30 +906,8 @@ func (s *SubService) genSidecarTunnelLink(inbound *model.Inbound, email string) 
 			req.Negotiate = true // Multi-transport sessions always negotiate.
 		} else if len(req.Transports) == 1 && req.Transports[0].Type == "cupsonline" {
 			req.Negotiate = false // The working single-Cups exit uses the legacy path.
-			if req.Transports[0].URL != "" {
-				req.Context = req.Transports[0].URL
-			}
 		} else if len(req.Transports) == 1 && req.Transports[0].Type == "direct" {
 			req.Negotiate = true // Direct is implemented only by OpenFlux's session path.
-		}
-		if req.Context == "" {
-			for _, transport := range req.Transports {
-				if transport.Type == "yandex" && transport.URL != "" {
-					req.Context = transport.URL
-					break
-				}
-			}
-		}
-		if req.Context == "" {
-			for _, transport := range req.Transports {
-				if transport.URL != "" {
-					req.Context = transport.URL
-					break
-				}
-			}
-		}
-		if req.Context == "" {
-			req.Context = "http://#" // OpenFlux's default globalDocUrl.
 		}
 	}
 
@@ -2073,7 +2054,7 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 	if realitySetting != nil {
 		if sniValue, ok := searchKey(realitySetting, "serverNames"); ok {
 			if sNames, _ := sniValue.([]any); len(sNames) > 0 {
-				params["sni"], _ = sNames[random.Num(len(sNames))].(string)
+				params["sni"] = preferredRealityServerName(realitySetting, sNames)
 			}
 		}
 		if pbkValue, ok := searchKey(realitySettings, "publicKey"); ok {
@@ -2081,7 +2062,7 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 		}
 		if sidValue, ok := searchKey(realitySetting, "shortIds"); ok {
 			if shortIds, _ := sidValue.([]any); len(shortIds) > 0 {
-				params["sid"], _ = shortIds[random.Num(len(shortIds))].(string)
+				params["sid"] = firstRealityString(shortIds)
 			}
 		}
 		if fpValue, ok := searchKey(realitySettings, "fingerprint"); ok {
@@ -2100,6 +2081,45 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 		}
 		params["spx"] = deriveSpiderX(seed, clientKey)
 	}
+}
+
+// firstRealityString deliberately avoids choosing a new value on every export.
+// A subscription refresh must not silently change the REALITY identity that a
+// client has already imported.
+func firstRealityString(values []any) string {
+	for _, value := range values {
+		if text, ok := value.(string); ok && text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+// preferredRealityServerName uses the target hostname when it is explicitly
+// present in serverNames; otherwise it follows the panel link generator and
+// uses the first configured name. This keeps QR, URI and JSON subscriptions in
+// sync and avoids client-dependent failures caused by random SNI selection.
+func preferredRealityServerName(realitySetting map[string]any, serverNames []any) string {
+	first := firstRealityString(serverNames)
+	targetValue, ok := searchKey(realitySetting, "target")
+	if !ok {
+		targetValue, _ = searchKey(realitySetting, "dest")
+	}
+	target, _ := targetValue.(string)
+	host := target
+	if parsedHost, _, err := net.SplitHostPort(target); err == nil {
+		host = parsedHost
+	} else if strings.Count(target, ":") == 1 {
+		host, _, _ = strings.Cut(target, ":")
+	}
+	host = strings.Trim(host, "[]")
+	for _, value := range serverNames {
+		name, _ := value.(string)
+		if strings.EqualFold(name, host) {
+			return name
+		}
+	}
+	return first
 }
 
 // subKey returns a stable per-client identity for deterministic derivations,
@@ -3102,6 +3122,45 @@ type PageData struct {
 	SubAnnounce   string
 	Result        []string
 	Emails        []string
+	LinkNames     []string
+}
+
+// sidecarLinkName reads the display name already carried by the managed
+// sidecar share links. Keeping it as page metadata lets the subscription UI
+// show the inbound remark without changing the link copied into client apps.
+func sidecarLinkName(link string) string {
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "wdtt", "csqtt":
+		return strings.TrimSpace(u.Query().Get("name"))
+	case "openflux":
+		const prefix = "openflux://v1/"
+		if !strings.HasPrefix(strings.ToLower(link), prefix) {
+			return ""
+		}
+		packed, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(link[len(prefix):]))
+		if err != nil {
+			return ""
+		}
+		r := flate.NewReader(bytes.NewReader(packed))
+		raw, err := io.ReadAll(io.LimitReader(r, 1<<20))
+		_ = r.Close()
+		if err != nil {
+			return ""
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return ""
+		}
+		return strings.TrimSpace(payload.Name)
+	default:
+		return ""
+	}
 }
 
 // ResolveRequest extracts scheme and host info from request/headers consistently.
@@ -3243,6 +3302,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 
 	pageLinks := make([]string, 0, len(subs))
 	pageEmails := make([]string, 0, len(subs))
+	pageLinkNames := make([]string, 0, len(subs))
 	for i, sub := range subs {
 		email := ""
 		if i < len(emails) {
@@ -3251,6 +3311,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 		for _, link := range splitLinkLines(sub) {
 			pageLinks = append(pageLinks, link)
 			pageEmails = append(pageEmails, email)
+			pageLinkNames = append(pageLinkNames, sidecarLinkName(link))
 		}
 	}
 
@@ -3278,6 +3339,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 		SubSupportUrl: subSupportUrl,
 		Result:        pageLinks,
 		Emails:        pageEmails,
+		LinkNames:     pageLinkNames,
 	}
 }
 

@@ -560,6 +560,12 @@ export const sections: readonly Section[] = [
       },
       {
         method: 'GET',
+        path: '/panel/api/server/getOpenFluxUpdateInfo',
+        summary:
+          'Compare the installed OpenFlux server sidecar with the latest checksummed rolling build.',
+      },
+      {
+        method: 'GET',
         path: '/panel/api/server/getUpdateStatus',
         summary:
           'Report the outcome of the most recently launched panel self-update (see POST updatePanel). Compare the returned runId against the one updatePanel returned to tell this run apart from a stale result.',
@@ -674,6 +680,12 @@ export const sections: readonly Section[] = [
           },
         ],
         response: '{\n  "success": true,\n  "obj": {\n    "runId": "1735689600123456789"\n  }\n}',
+      },
+      {
+        method: 'POST',
+        path: '/panel/api/server/updateOpenFlux',
+        summary:
+          'Atomically update the OpenFlux server sidecar, restart only OpenFlux inbounds, and roll back if startup fails.',
       },
       {
         method: 'POST',
