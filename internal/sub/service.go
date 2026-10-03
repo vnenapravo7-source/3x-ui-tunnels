@@ -2061,6 +2061,16 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 		if pbkValue, ok := searchKey(realitySettings, "publicKey"); ok {
 			params["pbk"], _ = pbkValue.(string)
 		}
+		// The nested publicKey is share metadata, not an xray-core server
+		// setting, and old/imported rows can leave it out of sync with the
+		// private key the listener actually uses. Derivation is authoritative.
+		if privateValue, ok := searchKey(realitySetting, "privateKey"); ok {
+			if privateKey, ok := privateValue.(string); ok && privateKey != "" {
+				if publicKey, err := service.DeriveRealityPublicKey(privateKey); err == nil {
+					params["pbk"] = publicKey
+				}
+			}
+		}
 		if sidValue, ok := searchKey(realitySetting, "shortIds"); ok {
 			if shortIds, _ := sidValue.([]any); len(shortIds) > 0 {
 				params["sid"] = firstRealityString(shortIds)

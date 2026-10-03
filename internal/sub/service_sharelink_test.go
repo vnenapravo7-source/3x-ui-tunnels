@@ -1,11 +1,14 @@
 package sub
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	webservice "github.com/mhsanaei/3x-ui/v3/internal/web/service"
 )
 
 // shareLinkInbound builds a VLESS inbound with one client and the given stream
@@ -84,6 +87,33 @@ func TestGenVlessLink_RealityParamsMapped(t *testing.T) {
 	// A pbk<->sid swap must not silently pass: pbk must not carry the shortId.
 	if strings.Contains(link, "pbk=ab12cd") || strings.Contains(link, "sid=PBKvalue") {
 		t.Fatalf("reality pbk/sid mapping crossed: %s", link)
+	}
+}
+
+func TestGenVlessLink_RealityDerivesPublicKeyFromListenerPrivateKey(t *testing.T) {
+	privateKey := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x24}, 32))
+	wantPublicKey, err := webservice.DeriveRealityPublicKey(privateKey)
+	if err != nil {
+		t.Fatalf("derive expected public key: %v", err)
+	}
+	stream := `{
+		"network":"tcp","security":"reality",
+		"tcpSettings":{"header":{"type":"none"}},
+		"realitySettings":{
+			"privateKey":"` + privateKey + `",
+			"serverNames":["reality.example.com"],
+			"shortIds":["ab12cd"],
+			"settings":{"publicKey":"stale-public-key","fingerprint":"chrome"}
+		}
+	}`
+
+	link := (&SubService{}).genVlessLink(shareLinkInbound(stream), "user")
+	parsed, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parse generated link: %v", err)
+	}
+	if got := parsed.Query().Get("pbk"); got != wantPublicKey {
+		t.Fatalf("pbk = %q, want key derived from the listener private key %q", got, wantPublicKey)
 	}
 }
 

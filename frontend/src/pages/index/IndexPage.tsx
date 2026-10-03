@@ -349,6 +349,7 @@ export default function IndexPage() {
             status={status}
             onClose={() => setVersionOpen(false)}
             onBusy={setBusy}
+            onUpdated={refresh}
           />
         </LazyMount>
 

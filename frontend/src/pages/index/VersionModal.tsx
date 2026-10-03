@@ -19,6 +19,7 @@ interface VersionModalProps {
   status: Status;
   onClose: () => void;
   onBusy: (e: BusyEvent) => void;
+  onUpdated?: () => void | Promise<void>;
 }
 
 const GEOFILES = [
@@ -30,7 +31,17 @@ const GEOFILES = [
   'geoip_RU.dat',
 ];
 
-export default function VersionModal({ open, status, onClose, onBusy }: VersionModalProps) {
+function normalizeVersion(version: string | undefined) {
+  return (version || '').trim().replace(/^v/i, '');
+}
+
+export default function VersionModal({
+  open,
+  status,
+  onClose,
+  onBusy,
+  onUpdated,
+}: VersionModalProps) {
   const { t } = useTranslation();
   const [modal, modalContextHolder] = Modal.useModal();
   const [activeKey, setActiveKey] = useState<string | string[]>('1');
@@ -66,7 +77,8 @@ export default function VersionModal({ open, status, onClose, onBusy }: VersionM
         onClose();
         onBusy({ busy: true, tip: t('pages.index.dontRefresh') });
         try {
-          await HttpUtil.post(`/panel/api/server/installXray/${version}`);
+          const msg = await HttpUtil.post(`/panel/api/server/installXray/${version}`);
+          if (msg?.success) await onUpdated?.();
         } finally {
           onBusy({ busy: false });
         }
@@ -120,12 +132,22 @@ export default function VersionModal({ open, status, onClose, onBusy }: VersionM
                     title={t('pages.index.xraySwitchClickDesk')}
                     showIcon
                   />
+                  <div className="version-current">
+                    <span>{t('pages.index.xrayVersion')}</span>
+                    <Tag color={status.xray.state === 'running' ? 'green' : 'red'}>
+                      {status.xray.version && status.xray.version !== 'Unknown'
+                        ? `v${normalizeVersion(status.xray.version)}`
+                        : '—'}
+                    </Tag>
+                  </div>
                   <div className="version-list">
                     {versions.map((version, index) => (
                       <div key={version} className="version-list-item">
                         <Tag color={index % 2 === 0 ? 'purple' : 'green'}>{version}</Tag>
                         <Radio
-                          checked={version === `v${status?.xray?.version}`}
+                          checked={
+                            normalizeVersion(version) === normalizeVersion(status.xray.version)
+                          }
                           onClick={() => switchXrayVersion(version)}
                         />
                       </div>

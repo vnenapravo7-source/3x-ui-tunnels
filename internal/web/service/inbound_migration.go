@@ -106,6 +106,15 @@ func (s *InboundService) MigrationRequirements() (err error) {
 		return
 	}
 	for inbound_index := range inbounds {
+		if inbounds[inbound_index].Protocol == model.VLESS {
+			normalized, changed, keyErr := normalizeRealityPublicKey(inbounds[inbound_index].StreamSettings)
+			if keyErr != nil {
+				logger.Warning("MigrationRequirements: invalid REALITY keypair on inbound", inbounds[inbound_index].Id, ":", keyErr)
+			} else if changed {
+				inbounds[inbound_index].StreamSettings = normalized
+				logger.Info("MigrationRequirements: repaired REALITY public key on inbound", inbounds[inbound_index].Id)
+			}
+		}
 		settings := map[string]any{}
 		_ = json.Unmarshal([]byte(inbounds[inbound_index].Settings), &settings)
 		if raw, exists := settings["clients"]; exists && raw == nil {
