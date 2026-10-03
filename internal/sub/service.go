@@ -2054,7 +2054,7 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 	if realitySetting != nil {
 		if sniValue, ok := searchKey(realitySetting, "serverNames"); ok {
 			if sNames, _ := sniValue.([]any); len(sNames) > 0 {
-				params["sni"], _ = sNames[random.Num(len(sNames))].(string)
+				params["sni"] = preferredRealityServerName(realitySetting, sNames)
 			}
 		}
 		if pbkValue, ok := searchKey(realitySettings, "publicKey"); ok {
@@ -2062,7 +2062,7 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 		}
 		if sidValue, ok := searchKey(realitySetting, "shortIds"); ok {
 			if shortIds, _ := sidValue.([]any); len(shortIds) > 0 {
-				params["sid"], _ = shortIds[random.Num(len(shortIds))].(string)
+				params["sid"] = firstRealityString(shortIds)
 			}
 		}
 		if fpValue, ok := searchKey(realitySettings, "fingerprint"); ok {
@@ -2081,6 +2081,45 @@ func applyShareRealityParams(stream map[string]any, params map[string]string, cl
 		}
 		params["spx"] = deriveSpiderX(seed, clientKey)
 	}
+}
+
+// firstRealityString deliberately avoids choosing a new value on every export.
+// A subscription refresh must not silently change the REALITY identity that a
+// client has already imported.
+func firstRealityString(values []any) string {
+	for _, value := range values {
+		if text, ok := value.(string); ok && text != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+// preferredRealityServerName uses the target hostname when it is explicitly
+// present in serverNames; otherwise it follows the panel link generator and
+// uses the first configured name. This keeps QR, URI and JSON subscriptions in
+// sync and avoids client-dependent failures caused by random SNI selection.
+func preferredRealityServerName(realitySetting map[string]any, serverNames []any) string {
+	first := firstRealityString(serverNames)
+	targetValue, ok := searchKey(realitySetting, "target")
+	if !ok {
+		targetValue, _ = searchKey(realitySetting, "dest")
+	}
+	target, _ := targetValue.(string)
+	host := target
+	if parsedHost, _, err := net.SplitHostPort(target); err == nil {
+		host = parsedHost
+	} else if strings.Count(target, ":") == 1 {
+		host, _, _ = strings.Cut(target, ":")
+	}
+	host = strings.Trim(host, "[]")
+	for _, value := range serverNames {
+		name, _ := value.(string)
+		if strings.EqualFold(name, host) {
+			return name
+		}
+	}
+	return first
 }
 
 // subKey returns a stable per-client identity for deterministic derivations,

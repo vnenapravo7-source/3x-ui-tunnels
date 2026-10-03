@@ -16,7 +16,6 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/json_util"
-	"github.com/mhsanaei/3x-ui/v3/internal/util/random"
 	wgutil "github.com/mhsanaei/3x-ui/v3/internal/util/wireguard"
 )
 
@@ -792,13 +791,13 @@ func (s *SubJsonService) realityData(rData map[string]any, clientKey string) map
 	rltyData["spiderX"] = deriveSpiderX(seed, clientKey)
 	shortIds, ok := rData["shortIds"].([]any)
 	if ok && len(shortIds) > 0 {
-		rltyData["shortId"], _ = shortIds[random.Num(len(shortIds))].(string)
+		rltyData["shortId"] = firstRealityString(shortIds)
 	} else {
 		rltyData["shortId"] = ""
 	}
 	serverNames, ok := rData["serverNames"].([]any)
 	if ok && len(serverNames) > 0 {
-		rltyData["serverName"], _ = serverNames[random.Num(len(serverNames))].(string)
+		rltyData["serverName"] = preferredRealityServerName(rData, serverNames)
 	} else {
 		rltyData["serverName"] = ""
 	}

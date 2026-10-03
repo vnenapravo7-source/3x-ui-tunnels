@@ -458,8 +458,12 @@ export function genVlessLink(input: GenVlessLinkInput): string {
       params.set('pbk', reality.settings.publicKey);
       params.set('fp', reality.settings.fingerprint);
 
+      const targetHost = realityTargetHost(reality.target);
       const sni =
-        reality.settings.serverName || reality.serverNames?.[0] || reality.target?.split(':')[0];
+        reality.settings.serverName ||
+        reality.serverNames?.find((name) => name.toLowerCase() === targetHost.toLowerCase()) ||
+        reality.serverNames?.[0] ||
+        targetHost;
 
       if (sni && sni.length > 0) params.set('sni', sni);
 
@@ -559,6 +563,16 @@ function writeTlsParams(
 
 // Reality query-string writer shared by VLESS and Trojan. Preserves the
 // legacy SNI-omission quirk (see genVlessLink for the full story).
+function realityTargetHost(target?: string): string {
+  if (!target) return '';
+  if (target.startsWith('[')) {
+    const closingBracket = target.indexOf(']');
+    return closingBracket > 0 ? target.slice(1, closingBracket) : target;
+  }
+  const separator = target.lastIndexOf(':');
+  return separator > 0 && target.indexOf(':') === separator ? target.slice(0, separator) : target;
+}
+
 function writeRealityParams(
   stream: NonNullable<Inbound['streamSettings']>,
   params: URLSearchParams,
@@ -569,8 +583,12 @@ function writeRealityParams(
   params.set('pbk', reality.settings.publicKey);
   params.set('fp', reality.settings.fingerprint);
 
+  const targetHost = realityTargetHost(reality.target);
   const sni =
-    reality.settings.serverName || reality.serverNames?.[0] || reality.target?.split(':')[0];
+    reality.settings.serverName ||
+    reality.serverNames?.find((name) => name.toLowerCase() === targetHost.toLowerCase()) ||
+    reality.serverNames?.[0] ||
+    targetHost;
 
   if (sni && sni.length > 0) params.set('sni', sni);
 
