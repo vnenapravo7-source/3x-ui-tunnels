@@ -658,6 +658,20 @@ func (s *InboundService) normalizeStreamSettings(inbound *model.Inbound) {
 	inbound.StreamSettings = canonicalizeStreamNetworkKey(inbound.StreamSettings)
 }
 
+func (s *InboundService) normalizeRealityKeypair(inbound *model.Inbound) error {
+	if inbound == nil || inbound.Protocol != model.VLESS {
+		return nil
+	}
+	normalized, changed, err := normalizeRealityPublicKey(inbound.StreamSettings)
+	if err != nil {
+		return common.NewError("invalid REALITY keypair:", err)
+	}
+	if changed {
+		inbound.StreamSettings = normalized
+	}
+	return nil
+}
+
 // canonicalizeStreamNetworkKey rewrites a streamSettings JSON that names its
 // transport under "method" to the panel-canonical "network" key. When both
 // keys are present, "method" wins — matching xray-core's own precedence.
@@ -1116,6 +1130,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	inbound.TrafficResetDay = normalizeTrafficResetDay(inbound.TrafficResetDay)
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
+	if err := s.normalizeRealityKeypair(inbound); err != nil {
+		return inbound, false, err
+	}
 	if !s.FromNodeSync {
 		if err := validateInboundTLSCertificates(inbound.StreamSettings); err != nil {
 			return inbound, false, err
@@ -1730,6 +1747,9 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	inbound.TrafficResetDay = normalizeTrafficResetDay(inbound.TrafficResetDay)
 	// Normalize streamSettings based on protocol
 	s.normalizeStreamSettings(inbound)
+	if err := s.normalizeRealityKeypair(inbound); err != nil {
+		return inbound, false, err
+	}
 	if err := validateFinalMaskRealityCombo(inbound.StreamSettings); err != nil {
 		return inbound, false, err
 	}
