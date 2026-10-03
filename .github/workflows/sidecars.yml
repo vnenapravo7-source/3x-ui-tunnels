@@ -35,7 +35,7 @@ jobs:
     steps:
       - name: Checkout latest OpenFlux
         if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: p1neappleXpress/OpenFlux
           ref: main
