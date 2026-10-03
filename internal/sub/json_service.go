@@ -857,8 +857,9 @@ func (s *SubJsonService) genVless(subReq *SubService, inbound *model.Inbound, st
 		"encryption": encryption,
 		"level":      8,
 	}
-	if client.Flow != "" && !inbound.DisableFlow {
-		settings["flow"] = client.Flow
+	flow := model.CanonicalVlessFlow(client.Flow)
+	if flow != "" && !inbound.DisableFlow {
+		settings["flow"] = flow
 		outbound.Mux = muxWithoutTCP(mux)
 	}
 	outbound.Settings = settings

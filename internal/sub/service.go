@@ -1320,8 +1320,9 @@ func (s *SubService) genVlessLink(inbound *model.Inbound, email string) string {
 	default:
 		params["security"] = "none"
 	}
-	if len(client.Flow) > 0 && !inbound.DisableFlow && vlessFlowAllowed(streamNetwork, security, settings) {
-		params["flow"] = client.Flow
+	flow := model.CanonicalVlessFlow(client.Flow)
+	if len(flow) > 0 && !inbound.DisableFlow && vlessFlowAllowed(streamNetwork, security, settings) {
+		params["flow"] = flow
 	}
 
 	externalProxies, _ := stream["externalProxy"].([]any)

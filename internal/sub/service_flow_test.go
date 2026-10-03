@@ -42,6 +42,15 @@ func TestVlessFlowAllowed(t *testing.T) {
 	}
 }
 
+func TestCanonicalVlessFlow(t *testing.T) {
+	if got := model.CanonicalVlessFlow("xtls-rprx-vision-udp443"); got != "xtls-rprx-vision" {
+		t.Fatalf("legacy flow = %q, want canonical Vision", got)
+	}
+	if got := model.CanonicalVlessFlow("xtls-rprx-vision"); got != "xtls-rprx-vision" {
+		t.Fatalf("current flow changed to %q", got)
+	}
+}
+
 func flowTestInbound(streamSettings, encryption string) *model.Inbound {
 	return &model.Inbound{
 		Listen:   "203.0.113.1",
@@ -106,5 +115,24 @@ func TestGenVlessLink_FlowTcpRealityStillWorks(t *testing.T) {
 	link := s.genVlessLink(flowTestInbound(stream, "none"), "user")
 	if !strings.Contains(link, "flow=xtls-rprx-vision") {
 		t.Fatalf("tcp+reality link must keep the vision flow, got %q", link)
+	}
+}
+
+func TestGenVlessLink_LegacyFlowMatchesRuntimeConfig(t *testing.T) {
+	stream := `{
+		"network": "tcp",
+		"security": "reality",
+		"tcpSettings": {"header": {"type": "none"}},
+		"realitySettings": {
+			"serverNames": ["example.com"],
+			"shortIds": ["abcd"],
+			"settings": {"publicKey": "pub", "fingerprint": "chrome"}
+		}
+	}`
+	inbound := flowTestInbound(stream, "none")
+	inbound.Settings = strings.ReplaceAll(inbound.Settings, "xtls-rprx-vision", "xtls-rprx-vision-udp443")
+	link := (&SubService{}).genVlessLink(inbound, "user")
+	if !strings.Contains(link, "flow=xtls-rprx-vision") || strings.Contains(link, "udp443") {
+		t.Fatalf("legacy database flow must match the normalized runtime config, got %q", link)
 	}
 }

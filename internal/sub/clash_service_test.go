@@ -381,6 +381,27 @@ func TestBuildProxy_VLESSFlowXhttpRealityVlessenc(t *testing.T) {
 	}
 }
 
+func TestBuildProxy_VLESSCanonicalizesLegacyVisionFlow(t *testing.T) {
+	svc := &SubClashService{SubService: &SubService{}}
+	inbound := &model.Inbound{
+		Listen:   "203.0.113.1",
+		Port:     443,
+		Protocol: model.VLESS,
+		Settings: `{"encryption":"none"}`,
+	}
+	client := model.Client{ID: "11111111-2222-4333-8444-555555555555", Flow: "xtls-rprx-vision-udp443"}
+	stream := map[string]any{
+		"network":         "tcp",
+		"security":        "reality",
+		"tcpSettings":     map[string]any{"header": map[string]any{"type": "none"}},
+		"realitySettings": map[string]any{"publicKey": "pub", "serverName": "example.com", "shortId": "abcd"},
+	}
+	proxy := svc.buildProxy(svc.SubService, inbound, client, stream, nil)
+	if proxy["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("legacy Clash flow = %#v, want canonical Vision", proxy["flow"])
+	}
+}
+
 func TestBuildProxy_VLESSFlowSuppressedByDisableFlow(t *testing.T) {
 	svc := &SubClashService{SubService: &SubService{}}
 	inbound := &model.Inbound{
