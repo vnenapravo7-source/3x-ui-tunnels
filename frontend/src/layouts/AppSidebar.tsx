@@ -41,13 +41,11 @@ import {
 import { HttpUtil } from '@/utils';
 import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
 import { useAllSettings } from '@/api/queries/useAllSettings';
-import { useStatusQuery } from '@/api/queries/useStatusQuery';
 import { useCommandPalette } from '@/components/command-palette/useCommandPalette';
 import PanelUpdateModal from '@/pages/index/PanelUpdateModal';
 import type { PanelUpdateInfo } from '@/pages/index/PanelUpdateModal';
 import OpenFluxUpdateModal from '@/pages/index/OpenFluxUpdateModal';
 import type { OpenFluxUpdateInfo } from '@/pages/index/OpenFluxUpdateModal';
-import VersionModal from '@/pages/index/VersionModal';
 import './AppSidebar.css';
 
 // The palette listens for Ctrl as well as Cmd, so the chip must not show a
@@ -155,31 +153,6 @@ function OpenFluxVersionBadge({
   );
 }
 
-function XrayVersionBadge({
-  version,
-  collapsed,
-  onClick,
-}: {
-  version: string;
-  collapsed?: boolean;
-  onClick: () => void;
-}) {
-  const normalized = version.trim().replace(/^v/i, '');
-  const label = normalized && normalized !== 'Unknown' ? `Xray v${normalized}` : 'Xray —';
-  return (
-    <button
-      type="button"
-      className="sider-version"
-      aria-label={`Показать и сменить версию ${label}`}
-      title={`Показать и сменить версию ${label}`}
-      onClick={onClick}
-    >
-      <ToolOutlined />
-      {!collapsed && <span className="sider-version-text">{label}</span>}
-    </button>
-  );
-}
-
 function ThemeCycleButton({
   id,
   isDark,
@@ -229,7 +202,6 @@ export default function AppSidebar() {
   const navigate = useNavigate();
   const { pathname, hash } = useLocation();
   const { allSetting } = useAllSettings();
-  const { status, refresh: refreshStatus } = useStatusQuery();
   const showSubFormats = !!(allSetting.subJsonEnable || allSetting.subClashEnable);
   const showSubBalancers = !!allSetting.subJsonEnable;
 
@@ -251,8 +223,6 @@ export default function AppSidebar() {
     installed: false,
   });
   const [openFluxUpdateOpen, setOpenFluxUpdateOpen] = useState(false);
-  const [xrayVersionOpen, setXrayVersionOpen] = useState(false);
-  const [xrayUpdateBusy, setXrayUpdateBusy] = useState(false);
   const updateCheckStarted = useRef(false);
   const railCollapsed = !hovered && !pinned;
   const railStyle = useMemo(
@@ -574,11 +544,6 @@ export default function AppSidebar() {
           onClick={onMenuClick}
         />
         <div className="sider-footer">
-          <XrayVersionBadge
-            version={status.xray.version}
-            collapsed={railCollapsed}
-            onClick={() => setXrayVersionOpen(true)}
-          />
           <OpenFluxVersionBadge
             version={openFluxInfo.currentVersion}
             collapsed={railCollapsed}
@@ -672,10 +637,6 @@ export default function AppSidebar() {
           }}
         />
         <div className="drawer-footer">
-          <XrayVersionBadge
-            version={status.xray.version}
-            onClick={() => setXrayVersionOpen(true)}
-          />
           <OpenFluxVersionBadge
             version={openFluxInfo.currentVersion}
             onCheck={() => void checkOpenFluxRelease(true)}
@@ -716,18 +677,7 @@ export default function AppSidebar() {
         onCheck={() => checkOpenFluxRelease(true)}
         onUpdated={(info) => setOpenFluxInfo(info)}
       />
-      <VersionModal
-        open={xrayVersionOpen}
-        status={status}
-        onClose={() => setXrayVersionOpen(false)}
-        onBusy={({ busy }) => setXrayUpdateBusy(busy)}
-        onUpdated={refreshStatus}
-      />
-      <Spin
-        spinning={updateBusy || xrayUpdateBusy}
-        fullscreen
-        tip={xrayUpdateBusy ? 'Переключение Xray…' : 'Обновление панели…'}
-      />
+      <Spin spinning={updateBusy} fullscreen tip="Обновление панели…" />
     </div>
   );
 }
