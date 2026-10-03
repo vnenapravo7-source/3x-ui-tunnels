@@ -43,7 +43,7 @@ jobs:
 
       - name: Set up Go
         if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: openflux/go.mod
           cache-dependency-path: openflux/go.sum
