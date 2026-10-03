@@ -117,6 +117,16 @@ func TestSubJsonServiceVisionFlowDisablesTCPMuxOnly(t *testing.T) {
 	}
 }
 
+func TestSubJsonServiceCanonicalizesLegacyVisionFlow(t *testing.T) {
+	svc := NewSubJsonService("", "", "", "", nil)
+	inbound := &model.Inbound{Listen: "1.2.3.4", Port: 443, Protocol: model.VLESS, Settings: `{"encryption":"none"}`}
+	raw := svc.genVless(&SubService{}, inbound, nil, model.Client{ID: "uuid-1", Flow: "xtls-rprx-vision-udp443"}, "")
+	settings := outboundSettings(t, raw)
+	if settings["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("legacy JSON flow = %#v, want canonical Vision", settings["flow"])
+	}
+}
+
 func TestSubJsonServiceInjectsGlobalFinalMask(t *testing.T) {
 	finalMask := `{"tcp":[{"type":"fragment","settings":{"packets":"tlshello","length":"100-200","delay":"10-20"}}],"udp":[{"type":"noise","settings":{"noise":[{"type":"base64","packet":"SGVsbG8="}]}}],"quicParams":{"congestion":"bbr"}}`
 	svc := NewSubJsonService("", "", finalMask, "", nil)

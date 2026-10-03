@@ -239,10 +239,7 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 			if !c.Enable {
 				continue
 			}
-			flow := c.Flow
-			if flow == "xtls-rprx-vision-udp443" {
-				flow = "xtls-rprx-vision"
-			}
+			flow := model.CanonicalVlessFlow(c.Flow)
 			if inbound.DisableFlow {
 				flow = ""
 			}
