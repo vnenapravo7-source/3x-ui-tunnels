@@ -5,7 +5,7 @@
 ## Установка
 
 ```bash
-bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/install.sh) fork-v3.8.5-5
+bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/install.sh)
 x-ui tunnels install all
 ```
 
@@ -16,7 +16,7 @@ CSQTT-inbound на сервере может быть только один. Д�
 ## Обновление форка
 
 ```bash
-XUI_UPDATE_TAG=fork-v3.8.5-5 bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh)
+bash <(curl -fsSL --retry 3 https://raw.githubusercontent.com/vnenapravo7-source/3x-ui-tunnels/main/update.sh)
 x-ui tunnels update all
 ```
 
