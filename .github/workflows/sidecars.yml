@@ -41,19 +41,68 @@ jobs:
           ref: main
           path: openflux
 
-      - name: Set up Go
+      - name: Check whether OpenFlux changed
+        id: openflux
         if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
+        run: |
+          set -euo pipefail
+          mkdir -p out tmp-openflux-state
+          current=$(git -C openflux rev-parse HEAD)
+          published=''
+          if gh release download sidecars-edge \
+            --pattern openflux-upstream-commit.txt \
+            --dir tmp-openflux-state >/dev/null 2>&1; then
+            published=$(tr -d '[:space:]' < tmp-openflux-state/openflux-upstream-commit.txt)
+          fi
+
+          assets=$(gh release view sidecars-edge --json assets --jq '.assets[].name' 2>/dev/null || true)
+          complete=true
+          for name in \
+            openflux-linux-amd64 openflux-linux-amd64.sha256 \
+            openflux-linux-arm64 openflux-linux-arm64.sha256 \
+            openflux-linux-armv7 openflux-linux-armv7.sha256 \
+            openflux-upstream-commit.txt openflux-upstream-commit.txt.sha256; do
+            if ! grep -Fxq "$name" <<<"$assets"; then
+              complete=false
+              break
+            fi
+          done
+
+          if [[ "$current" == "$published" && "$complete" == true ]]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "OpenFlux $current is already published; skipping an identical rebuild."
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "OpenFlux update required: published=${published:-none}, current=$current."
+          fi
+
+      - name: Set up Go
+        if: steps.openflux.outputs.build == 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: openflux/go.mod
           cache-dependency-path: openflux/go.sum
 
       - name: Test and build OpenFlux
-        if: github.event_name != 'workflow_dispatch' || inputs.component == 'all' || inputs.component == 'openflux'
+        if: steps.openflux.outputs.build == 'true'
         working-directory: openflux
         run: |
           set -euo pipefail
-          go test ./transport/yandex ./transport/cupsonline ./transport -count=1
+          passed=false
+          for attempt in 1 2 3; do
+            echo "OpenFlux test attempt $attempt of 3"
+            if go test ./transport/yandex ./transport/cupsonline ./transport -count=1; then
+              passed=true
+              break
+            fi
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 2))
+            fi
+          done
+          if [[ "$passed" != true ]]; then
+            echo 'OpenFlux tests failed three times; refusing to replace the published binaries.' >&2
+            exit 1
+          fi
           mkdir -p ../out
           git rev-parse HEAD > ../out/openflux-upstream-commit.txt
           for arch in amd64 arm64; do
@@ -99,10 +148,15 @@ jobs:
       - name: Publish rolling sidecar release
         run: |
           set -euo pipefail
+          mapfile -t assets < <(find out -maxdepth 1 -type f -print | sort)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            echo 'No changed sidecar assets to publish.'
+            exit 0
+          fi
           if ! gh release view sidecars-edge >/dev/null 2>&1; then
             gh release create sidecars-edge --prerelease --latest=false \
               --title 'Tunnel sidecars (rolling)' \
               --notes 'Rolling, independently tested binaries used by x-ui tunnels update. Existing tunnel configuration is preserved.'
           fi
-          gh release upload sidecars-edge out/* --clobber
+          gh release upload sidecars-edge "${assets[@]}" --clobber
 
