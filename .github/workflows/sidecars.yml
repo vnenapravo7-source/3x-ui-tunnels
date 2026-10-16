@@ -78,7 +78,7 @@ jobs:
 
       - name: Set up Go
         if: steps.openflux.outputs.build == 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: openflux/go.mod
           cache-dependency-path: openflux/go.sum
